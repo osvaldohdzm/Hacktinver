@@ -1559,7 +1559,7 @@ def portolio_optimization2(tickers,total_mount):
         mount = total_mount * 0.2 
 
     allocation_dataframe['Allocation $'] = allocation_dataframe['Allocation %'] * float(mount)
-
+    allocation_dataframe['Allocation $'] = allocation_dataframe.apply(lambda x: "{:,}".format(x['Allocation $']), axis=1)
     return allocation_dataframe
 
 
@@ -2440,7 +2440,7 @@ def main_menu():
         input("\nPulsa una tecla para continuar")
         main_menu()
     elif opcionmain_menu=="9":
-        input_amount = int(input("Enter the amount to invest (i.e. 100000): "))
+        input_amount = int(input("Enter the amount to invest (i.e. 500000): "))
         input_tickers = str(input("Enter tickers separated by commas (i.e. OMAB,AAPL,BRKB,MSFT): "))
         input_tickers = input_tickers.upper()
         input_tickers_list = input_tickers.split (",")
@@ -2449,7 +2449,8 @@ def main_menu():
             tickers.append(i)
         print("\nTickers list : ", tickers)
         print("\nOptimizing portfolio...")
-        portolio_optimization2(tickers,input_amount)
+        allocation_dataframe = portolio_optimization2(tickers,input_amount)
+        print(allocation_dataframe)
         input("\nPulsa una tecla para continuar")        
         main_menu()
     elif opcionmain_menu=="0":
