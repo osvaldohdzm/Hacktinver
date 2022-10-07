@@ -1,6 +1,6 @@
 # ractinver
 '
-grep -o 'BMV:.*"' stocklist.txt | sed 's/".*/,/g' | sed 's/BMV://g'  | sed 's/\///g' | tr -d \\n
+grep -o 'BMV:.*"' stocklist.txt | sed 's/".*/,/g' | sed 's/BMV://g'  | sed 's/&#92;///g' | tr -d &#92;&#92;n
 '
 ## Getting started
 
