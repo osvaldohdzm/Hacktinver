@@ -2440,7 +2440,7 @@ def main_menu():
         input("\nPulsa una tecla para continuar")
         main_menu()
     elif opcionmain_menu=="9":
-        input_amount = int(input("Enter the amount to invest (i.e. 500000): "))
+        input_amount = int(input("Enter the amount to invest (i.e. 800000): "))
         input_tickers = str(input("Enter tickers separated by commas (i.e. OMAB,AAPL,BRKB,MSFT): "))
         input_tickers = input_tickers.upper()
         input_tickers_list = input_tickers.split (",")
