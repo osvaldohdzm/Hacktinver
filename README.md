@@ -1,7 +1,7 @@
 # ractinver
-'
+```
 grep -o 'BMV:.*"' stocklist.txt | sed 's/".*/,/g' | sed 's/BMV://g'  | sed 's/\///g' | tr -d \\n
-'
+```
 ## Getting started
 
 To make it easy for you to get started with GitLab, here's a list of recommended next steps.
