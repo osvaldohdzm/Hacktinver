@@ -1299,7 +1299,7 @@ def swing_trading_strategy_machine():
         while True:
             if opcion =="y" or opcion =="Y":
                 tickers = df['Símbolo3'].astype(str).values.tolist() 
-                df_allocations = portolio_optimization2(tickers,1000000)
+                df_allocations = portfolio_optimization2(tickers,1000000)
                 df_result = pd.merge(df_allocations,df,left_on='Ticker',right_on='Símbolo3')
                 df_result['Títulos'] = df_result['Allocation $']/df_result['Último3']
                 df_result['Títulos'] = df_result['Títulos'].astype('int32') 
@@ -1531,8 +1531,14 @@ def portolio_optimization2(tickers,total_mount):
     stocks_data = pd.DataFrame()
     inicio = "2015-01-01"
     fin = datetime.today().strftime('%Y-%m-%d')
+    last_prices = {}
     for ticker in tickers:
-        stocks_data[ticker] = web.DataReader(ticker+".MX", data_source='yahoo', start=inicio, end=fin)["Adj Close"]
+        try:
+            stocks_data[ticker] = web.DataReader(ticker+".MX", data_source='yahoo', start=inicio, end=fin)["Adj Close"]
+            last_prices[ticker] = stocks_data.iloc[-1, stocks_data.columns.get_loc(ticker)]
+        except Exception as e:
+            print("Error al obtener los datos ")
+            print(e)
 
     # Calculate expected returns and sample covariance
     mu = expected_returns.mean_historical_return(stocks_data)
@@ -1543,22 +1549,27 @@ def portolio_optimization2(tickers,total_mount):
     raw_weights = ef.max_sharpe()
     cleaned_weights = ef.clean_weights()
 
-    ef.portfolio_performance(verbose=True)
+    ef.portfolio_performance(verbose=False)
 
-    print(cleaned_weights)
+    #print(cleaned_weights)
 
     allocation_dataframe = pd.DataFrame(cleaned_weights.items(), columns=['Ticker', 'Allocation %'])
 
-    if len(allocation_dataframe.index) >= 12:
-        mount = total_mount * 0.8
-    elif len(allocation_dataframe.index) >= 6: 
-        mount = total_mount * 0.6
-    elif len(allocation_dataframe.index) >= 3: 
-        mount = total_mount * 0.4
-    else: 
-        mount = total_mount * 0.2 
+#    if len(allocation_dataframe.index) >= 12:
+#        mount = total_mount * 0.8
+#    elif len(allocation_dataframe.index) >= 6: 
+#        mount = total_mount * 0.6
+#    elif len(allocation_dataframe.index) >= 3: 
+#        mount = total_mount * 0.4
+#    else: 
+#        mount = total_mount * 0.2 
+    mount = total_mount
 
     allocation_dataframe['Allocation $'] = allocation_dataframe['Allocation %'] * float(mount)
+    allocation_dataframe['LastPrice $'] = allocation_dataframe['Ticker'].map(last_prices)  
+    allocation_dataframe['TitlesNum'] = allocation_dataframe['Allocation $'] / allocation_dataframe['LastPrice $']
+    
+    allocation_dataframe['TitlesNum'] = allocation_dataframe['TitlesNum'].fillna(0).astype(int)
     allocation_dataframe['Allocation $'] = allocation_dataframe.apply(lambda x: "{:,}".format(x['Allocation $']), axis=1)
     return allocation_dataframe
 
@@ -2449,8 +2460,11 @@ def main_menu():
             tickers.append(i)
         print("\nTickers list : ", tickers)
         print("\nOptimizing portfolio...")
-        allocation_dataframe = portolio_optimization2(tickers,input_amount)
-        print(allocation_dataframe)
+        try:
+            allocation_dataframe = portolio_optimization2(tickers,input_amount)
+            print(allocation_dataframe)
+        except Exception as e: 
+            print(e)
         input("\nPulsa una tecla para continuar")        
         main_menu()
     elif opcionmain_menu=="0":
