@@ -1,5 +1,5 @@
 {
-  "TS016e21d6": "0121f724fc9b097289513bde229cd413fec39a059c4bc0c3db3c0be3edf0a097374de73cd5f278f60de0313e3c4eaeadd023c86b3f",
+  "TS016e21d6": "0121f724fc197c5a273d253ba8342aa2e5be05f37101316027ca50896b6cce1858852b86fc86ec7bc65601e7b2611e5a123e557188",
   "idUsuario": 341478,
   "cxCveUsuario": "osvaldo.hdz.m@outlook.com",
   "cxCurp": "0",
@@ -27,6 +27,6 @@
   "estatusPago": true,
   "fechaPagoAutorizado": "2022-10-02",
   "emailVerificado": true,
-  "tokenApp": "53BD15B125777B43E206CE72F5F693EB",
-  "tokenSession": "1666211084335"
+  "tokenApp": "4EF019AF842D3EB20F34E52C3DC3C1F0",
+  "tokenSession": "1666213179518"
 }

@@ -1,1 +1,6 @@
-{"status":"ERROR","msg":"Erro al validar token.","tokenSession":null,"collection":null}
+{
+  "status": "ERROR",
+  "msg": "Fallida: Sesi�n no es permitida",
+  "tokenSession": null,
+  "collection": null
+}
