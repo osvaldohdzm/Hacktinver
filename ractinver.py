@@ -1565,7 +1565,11 @@ def portolio_optimization2(tickers,total_mount):
 #        mount = total_mount * 0.2 
     mount = total_mount
 
-    allocation_dataframe['Allocation $'] = allocation_dataframe['Allocation %'] * float(mount)
+    if len(allocation_dataframe.index) < 3:
+        mount = total_mount * 0.7
+        print("\nSetting amount limits due to the number of symbols\n")
+    allocation_dataframe['Allocation %'] = allocation_dataframe['Allocation %'] * 100
+    allocation_dataframe['Allocation $'] = allocation_dataframe['Allocation %'] * float(mount)/100  
     allocation_dataframe['LastPrice $'] = allocation_dataframe['Ticker'].map(last_prices)  
     allocation_dataframe['TitlesNum'] = allocation_dataframe['Allocation $'] / allocation_dataframe['LastPrice $']
     
