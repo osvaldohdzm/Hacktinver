@@ -1,0 +1,2025 @@
+Sort:;Fav;Información;Emisora;Precio;% Variación;Volumen Compra;Precio de Compra;Volumen de Venta;Precio de Venta;Comprar o vender
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraSRET1 *;Precio$142.000;% Variación 4.64% ;Volumen Compra1;Precio de Compra$135.700;Volumen de Venta46;Precio de Venta$142.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraVYM *;Precio$2,000.000;% Variación 3.52% ;Volumen Compra3;Precio de Compra$2,000.000;Volumen de Venta3;Precio de Venta$2,100.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraSOXL *;Precio$160.500;% Variación 3.15% ;Volumen Compra50,000;Precio de Compra$159.020;Volumen de Venta100,000;Precio de Venta$160.410;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraGDX *;Precio$472.000;% Variación 2.60% ;Volumen Compra64,506;Precio de Compra$455.120;Volumen de Venta43,000;Precio de Venta$519.990;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraXLE *;Precio$1,718.850;% Variación 1.71% ;Volumen Compra11,800;Precio de Compra$1,444.960;Volumen de Venta11,800;Precio de Venta$1,788.990;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraFAS *;Precio$1,186.000;% Variación 1.54% ;Volumen Compra3,600;Precio de Compra$1,173.670;Volumen de Venta56;Precio de Venta$1,185.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraVOO *;Precio$6,820.000;% Variación 1.33% ;Volumen Compra1,400;Precio de Compra$6,732.020;Volumen de Venta2,116;Precio de Venta$6,799.990;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraTQQQ *;Precio$390.000;% Variación 1.30% ;Volumen Compra26,000;Precio de Compra$383.010;Volumen de Venta52,000;Precio de Venta$391.990;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraVEA *;Precio$749.990;% Variación 1.21% ;Volumen Compra27,000;Precio de Compra$731.010;Volumen de Venta40,500;Precio de Venta$749.980;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraSPXL *;Precio$1,146.600;% Variación 1.11% ;Volumen Compra3,400;Precio de Compra$1,140.010;Volumen de Venta3,400;Precio de Venta$1,154.480;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraQLD *;Precio$741.000;% Variación 1.06% ;Volumen Compra19,700;Precio de Compra$735.150;Volumen de Venta19,700;Precio de Venta$744.570;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraTECL *;Precio$449.700;% Variación 1.06% ;Volumen Compra9,000;Precio de Compra$390.010;Volumen de Venta5;Precio de Venta$469.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraEWZ *;Precio$663.600;% Variación 1.00% ;Volumen Compra45,600;Precio de Compra$661.450;Volumen de Venta30,400;Precio de Venta$667.790;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraNAFTRAC ISHRS;Precio$46.570;% Variación 0.80% ;Volumen Compra2,046;Precio de Compra$46.600;Volumen de Venta10,000;Precio de Venta$46.660;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraIVVPESO ISHRS;Precio$68.170;% Variación 0.77% ;Volumen Compra1;Precio de Compra$68.180;Volumen de Venta2;Precio de Venta$68.450;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraESGMEX ISHRS;Precio$39.820;% Variación 0.68% ;Volumen Compra101,000;Precio de Compra$40.040;Volumen de Venta189,300;Precio de Venta$40.130;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraXLK *;Precio$2,443.580;% Variación 0.67% ;Volumen Compra3,800;Precio de Compra$2,429.010;Volumen de Venta2,800;Precio de Venta$2,455.990;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraSPY *;Precio$7,385.000;% Variación 0.60% ;Volumen Compra2,400;Precio de Compra$7,326.490;Volumen de Venta11,000;Precio de Venta$7,350.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraVMEX 19;Precio$35.550;% Variación 0.57% ;Volumen Compra94,700;Precio de Compra$35.490;Volumen de Venta2;Precio de Venta$35.650;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraIVV *;Precio$7,405.250;% Variación 0.47% ;Volumen Compra700;Precio de Compra$7,363.870;Volumen de Venta1,100;Precio de Venta$7,379.110;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraEDZ *;Precio$402.000;% Variación 0.25% ;Volumen Compra100;Precio de Compra$398.460;Volumen de Venta11,200;Precio de Venta$400.990;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraEDC *;Precio$463.000;% Variación 0.22% ;Volumen Compra8,700;Precio de Compra$455.840;Volumen de Venta1;Precio de Venta$461.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraUSO *;Precio$1,410.000;% Variación 0.21% ;Volumen Compra5,100;Precio de Compra$1,389.910;Volumen de Venta3,400;Precio de Venta$1,398.930;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraCETETRC ISHRS;Precio$105.880;% Variación 0.09% ;Volumen Compra70,001;Precio de Compra$105.790;Volumen de Venta69,801;Precio de Venta$105.880;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraIB1MXX N;Precio$6,480.250;% Variación 0.02% ;Volumen Compra125;Precio de Compra$6,481.850;Volumen de Venta108;Precio de Venta$6,509.110;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraANGELD 10;Precio$14.940;% Variación 0.00% ;Volumen Compra20;Precio de Compra$14.720;Volumen de Venta8;Precio de Venta$14.950;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraBND *;Precio$1,390.800;% Variación 0.00% ;Volumen Compra0;Precio de Compra$0.000;Volumen de Venta3;Precio de Venta$1,450.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraCIBR *;Precio$763.100;% Variación 0.00% ;Volumen Compra1;Precio de Compra$734.000;Volumen de Venta350;Precio de Venta$790.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraCORPTRC ISHRS;Precio$7.550;% Variación 0.00% ;Volumen Compra2;Precio de Compra$7.540;Volumen de Venta101;Precio de Venta$7.550;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraDIABLOI 10;Precio$11.650;% Variación 0.00% ;Volumen Compra21;Precio de Compra$11.400;Volumen de Venta1,039;Precio de Venta$11.650;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraDIA *;Precio$6,112.000;% Variación 0.00% ;Volumen Compra1,200;Precio de Compra$6,096.010;Volumen de Venta1,200;Precio de Venta$6,119.510;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraDRIP *;Precio$272.500;% Variación 0.00% ;Volumen Compra13,000;Precio de Compra$264.020;Volumen de Venta134;Precio de Venta$293.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraDRIV *;Precio$402.290;% Variación 0.00% ;Volumen Compra1;Precio de Compra$400.000;Volumen de Venta2;Precio de Venta$423.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraFIBRATC 14;Precio$18.480;% Variación 0.00% ;Volumen Compra99,999;Precio de Compra$18.510;Volumen de Venta2;Precio de Venta$18.530;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraGLD *;Precio$3,041.000;% Variación 0.00% ;Volumen Compra5,800;Precio de Compra$3,041.010;Volumen de Venta5,800;Precio de Venta$3,059.750;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraIAU *;Precio$618.660;% Variación 0.00% ;Volumen Compra37,200;Precio de Compra$620.150;Volumen de Venta32,200;Precio de Venta$649.990;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraINDA *;Precio$824.710;% Variación 0.00% ;Volumen Compra24,200;Precio de Compra$825.010;Volumen de Venta36,300;Precio de Venta$899.990;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraIWM *;Precio$3,455.530;% Variación 0.00% ;Volumen Compra5,800;Precio de Compra$3,372.810;Volumen de Venta5,800;Precio de Venta$3,389.110;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraJNUG *;Precio$475.000;% Variación 0.00% ;Volumen Compra2,200;Precio de Compra$480.010;Volumen de Venta2,200;Precio de Venta$639.990;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraLIT *;Precio$1,318.710;% Variación 0.00% ;Volumen Compra800;Precio de Compra$1,311.070;Volumen de Venta1;Precio de Venta$1,525.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraMEXTRAC 9;Precio$0.000;% Variación 0.00% ;Volumen Compra0;Precio de Compra$0.000;Volumen de Venta0;Precio de Venta$0.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraQVGMEX 18;Precio$20.570;% Variación 0.00% ;Volumen Compra20,000;Precio de Compra$20.590;Volumen de Venta20,000;Precio de Venta$20.660;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraQYLD *;Precio$318.310;% Variación 0.00% ;Volumen Compra2;Precio de Compra$332.000;Volumen de Venta2;Precio de Venta$348.410;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraSOXX *;Precio$6,251.000;% Variación 0.00% ;Volumen Compra600;Precio de Compra$6,000.010;Volumen de Venta1;Precio de Venta$6,799.990;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraSPLG *;Precio$866.020;% Variación 0.00% ;Volumen Compra1;Precio de Compra$862.200;Volumen de Venta2;Precio de Venta$866.020;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraTAN *;Precio$1,310.320;% Variación 0.00% ;Volumen Compra2,400;Precio de Compra$1,240.010;Volumen de Venta2,400;Precio de Venta$1,323.740;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraTZA *;Precio$780.000;% Variación 0.00% ;Volumen Compra925;Precio de Compra$817.400;Volumen de Venta0;Precio de Venta$0.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraVGK *;Precio$948.000;% Variación 0.00% ;Volumen Compra21,000;Precio de Compra$946.490;Volumen de Venta10,500;Precio de Venta$970.190;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraVGT *;Precio$6,311.090;% Variación 0.00% ;Volumen Compra800;Precio de Compra$6,155.010;Volumen de Venta800;Precio de Venta$6,999.980;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraVTI *;Precio$3,690.000;% Variación 0.00% ;Volumen Compra1,800;Precio de Compra$3,650.020;Volumen de Venta0;Precio de Venta$0.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraXLF *;Precio$626.000;% Variación 0.00% ;Volumen Compra31,800;Precio de Compra$625.010;Volumen de Venta31,800;Precio de Venta$631.990;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraXLV *;Precio$2,480.000;% Variación 0.00% ;Volumen Compra6,400;Precio de Compra$2,251.010;Volumen de Venta6,400;Precio de Venta$2,589.970;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraYANG *;Precio$564.000;% Variación 0.00% ;Volumen Compra0;Precio de Compra$0.000;Volumen de Venta1;Precio de Venta$595.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraYINN *;Precio$625.000;% Variación 0.00% ;Volumen Compra3,200;Precio de Compra$510.010;Volumen de Venta1;Precio de Venta$977.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraSLV *;Precio$345.000;% Variación -0.08% ;Volumen Compra87,300;Precio de Compra$343.850;Volumen de Venta58,200;Precio de Venta$348.870;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraSHY *;Precio$1,616.500;% Variación -0.09% ;Volumen Compra6,100;Precio de Compra$1,613.150;Volumen de Venta12,200;Precio de Venta$1,619.790;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraQQQ *;Precio$5,403.830;% Variación -0.11% ;Volumen Compra16,600;Precio de Compra$5,386.520;Volumen de Venta3,600;Precio de Venta$5,403.830;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraEWG *;Precio$415.000;% Variación -0.13% ;Volumen Compra72,300;Precio de Compra$413.170;Volumen de Venta48,200;Precio de Venta$418.430;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraVT *;Precio$1,617.440;% Variación -0.13% ;Volumen Compra3,600;Precio de Compra$1,588.120;Volumen de Venta7,200;Precio de Venta$1,634.990;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraVWO *;Precio$726.000;% Variación -0.13% ;Volumen Compra27,600;Precio de Compra$722.010;Volumen de Venta27,600;Precio de Venta$736.560;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraIB01 N;Precio$2,045.600;% Variación -0.15% ;Volumen Compra1,023;Precio de Compra$2,037.200;Volumen de Venta909;Precio de Venta$2,048.980;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraBOTZ *;Precio$369.040;% Variación -0.26% ;Volumen Compra5;Precio de Compra$352.000;Volumen de Venta200;Precio de Venta$366.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraDLRTRAC 15;Precio$18.800;% Variación -0.29% ;Volumen Compra90,000;Precio de Compra$18.777;Volumen de Venta610,000;Precio de Venta$18.791;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraUDITRAC ISHRS;Precio$125.540;% Variación -0.29% ;Volumen Compra7;Precio de Compra$125.200;Volumen de Venta70,022;Precio de Venta$125.540;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraBIL *;Precio$1,829.730;% Variación -0.30% ;Volumen Compra10,400;Precio de Compra$1,827.200;Volumen de Venta5,000;Precio de Venta$1,830.040;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraSHV *;Precio$2,196.100;% Variación -0.31% ;Volumen Compra1;Precio de Compra$2,196.100;Volumen de Venta18,100;Precio de Venta$2,197.350;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraVUAA N;Precio$1,371.200;% Variación -0.37% ;Volumen Compra270;Precio de Compra$1,360.200;Volumen de Venta269;Precio de Venta$1,365.200;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraPSQ *;Precio$296.010;% Variación -0.40% ;Volumen Compra0;Precio de Compra$0.000;Volumen de Venta67,600;Precio de Venta$297.990;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraLQDA N;Precio$98.850;% Variación -0.46% ;Volumen Compra856;Precio de Compra$97.330;Volumen de Venta1,209;Precio de Venta$99.260;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraICLN *;Precio$350.000;% Variación -0.57% ;Volumen Compra1;Precio de Compra$350.020;Volumen de Venta56,600;Precio de Venta$358.380;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraGENIUS 21;Precio$37.370;% Variación -0.61% ;Volumen Compra40,856;Precio de Compra$37.330;Volumen de Venta40,978;Precio de Venta$37.470;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraACWI *;Precio$1,574.500;% Variación -0.73% ;Volumen Compra5,000;Precio de Compra$1,585.690;Volumen de Venta7,000;Precio de Venta$1,612.890;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraVIXY *;Precio$330.000;% Variación -0.75% ;Volumen Compra7;Precio de Compra$329.000;Volumen de Venta8;Precio de Venta$330.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraECAR N;Precio$113.000;% Variación -0.77% ;Volumen Compra10;Precio de Compra$112.460;Volumen de Venta102;Precio de Venta$118.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraMCHI *;Precio$786.050;% Variación -0.77% ;Volumen Compra25,200;Precio de Compra$784.010;Volumen de Venta25,200;Precio de Venta$799.990;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraCSPX N;Precio$7,620.000;% Variación -0.94% ;Volumen Compra100;Precio de Compra$7,468.430;Volumen de Venta208;Precio de Venta$7,600.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraSQQQ *;Precio$1,153.000;% Variación -0.95% ;Volumen Compra15,000;Precio de Compra$1,145.010;Volumen de Venta3;Precio de Venta$1,190.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraLABU *;Precio$122.000;% Variación -1.01% ;Volumen Compra50,000;Precio de Compra$122.110;Volumen de Venta50,280;Precio de Venta$125.100;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraTECS *;Precio$980.000;% Variación -1.11% ;Volumen Compra3,800;Precio de Compra$976.010;Volumen de Venta1;Precio de Venta$1,100.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraVNQ *;Precio$1,540.020;% Variación -1.47% ;Volumen Compra8,600;Precio de Compra$1,532.010;Volumen de Venta8,600;Precio de Venta$1,562.490;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraSPXS *;Precio$531.850;% Variación -1.51% ;Volumen Compra18,200;Precio de Compra$525.010;Volumen de Venta36,400;Precio de Venta$534.910;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraAAXJ *;Precio$1,140.000;% Variación -1.89% ;Volumen Compra6,000;Precio de Compra$1,125.010;Volumen de Venta3,000;Precio de Venta$1,174.990;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraGUSH *;Precio$3,330.010;% Variación -2.06% ;Volumen Compra800;Precio de Compra$3,200.010;Volumen de Venta400;Precio de Venta$3,449.990;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraLABD *;Precio$500.000;% Variación -2.15% ;Volumen Compra2,700;Precio de Compra$484.510;Volumen de Venta3;Precio de Venta$522.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraFAZ *;Precio$513.000;% Variación -2.66% ;Volumen Compra14;Precio de Compra$513.000;Volumen de Venta3,700;Precio de Venta$524.590;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraSOXS *;Precio$1,366.000;% Variación -3.67% ;Volumen Compra1,600;Precio de Compra$1,369.010;Volumen de Venta11;Precio de Venta$1,400.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraBKCH *;Precio$105.310;% Variación -5.30% ;Volumen Compra7,600;Precio de Compra$93.070;Volumen de Venta0;Precio de Venta$0.000;Comprar o vender Operar
+Fav
+    
+        
+            .az {
+                fill: rgba(255, 255, 255, 0);
+                stroke-miterlimit: 10;
+            }
+
+            .bz,
+            .cz {
+                stroke: none;
+            }
+
+            .cz {
+                fill: #FAB131;
+            }
+        
+    
+    
+        
+        
+    
+;Información Ver detalle;EmisoraUNG *;Precio$350.000;% Variación -6.67% ;Volumen Compra10,600;Precio de Compra$350.030;Volumen de Venta15,900;Precio de Venta$359.990;Comprar o vender Operar

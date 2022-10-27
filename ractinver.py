@@ -1527,9 +1527,9 @@ def display_ef_with_selected(mean_returns, cov_matrix, risk_free_rate,stocks_dat
 
 
 
-def portolio_optimization2(tickers,total_mount):
+def portfolio_optimization2(tickers,total_mount):
     stocks_data = pd.DataFrame()
-    inicio = "2015-01-01"
+    inicio = "2018-01-01"
     fin = datetime.today().strftime('%Y-%m-%d')
     last_prices = {}
     for ticker in tickers:
@@ -1540,37 +1540,31 @@ def portolio_optimization2(tickers,total_mount):
             print("Error al obtener los datos ")
             print(e)
 
-    # Calculate expected returns and sample covariance
-    mu = expected_returns.mean_historical_return(stocks_data)
-    S = risk_models.sample_cov(stocks_data)
-    
-    # Optimize for maximal Sharpe ratio
-    ef = EfficientFrontier(mu, S)
-    raw_weights = ef.max_sharpe()
-    cleaned_weights = ef.clean_weights()
+    allocation_dataframe = pd.DataFrame()
 
-    ef.portfolio_performance(verbose=False)
+    try:
+        # Calculate expected returns and sample covariance
+        mu = expected_returns.mean_historical_return(stocks_data)
+        S = risk_models.sample_cov(stocks_data) 
 
-    #print(cleaned_weights)
+        # Optimize for maximal Sharpe ratio
+        ef = EfficientFrontier(mu, S)
+        raw_weights = ef.max_sharpe()
+        cleaned_weights = ef.clean_weights()
 
-    allocation_dataframe = pd.DataFrame(cleaned_weights.items(), columns=['Ticker', 'Allocation %'])
-
-#    if len(allocation_dataframe.index) >= 12:
-#        mount = total_mount * 0.8
-#    elif len(allocation_dataframe.index) >= 6: 
-#        mount = total_mount * 0.6
-#    elif len(allocation_dataframe.index) >= 3: 
-#        mount = total_mount * 0.4
-#    else: 
-#        mount = total_mount * 0.2 
-    mount = total_mount
-
-    if len(allocation_dataframe.index) < 3:
-        mount = total_mount * 0.7
-        print("\nSetting amount limits due to the number of symbols\n")
+        ef.portfolio_performance(verbose=False)
+        #print(cleaned_weights)
+        allocation_dataframe = pd.DataFrame(cleaned_weights.items(), columns=['Ticker', 'Allocation %'])
+    except Exception as e: 
+        print(e)
+        print("\nSomething went wrong, making uniform distribution...")
+        allocation_dataframe = pd.DataFrame(stocks_data.columns, columns=['Ticker'])
+        tickers_count = len(allocation_dataframe.index)
+        allocation_dataframe['Allocation %'] = 1 / tickers_count
     allocation_dataframe['Allocation %'] = allocation_dataframe['Allocation %'] * 100
-    allocation_dataframe['Allocation $'] = allocation_dataframe['Allocation %'] * float(mount)/100  
-    allocation_dataframe['LastPrice $'] = allocation_dataframe['Ticker'].map(last_prices)  
+    allocation_dataframe['Allocation %'] = (allocation_dataframe['Allocation %'].apply(lambda x: 45.0 if x > 45.0 else x)).round(2)
+    allocation_dataframe['Allocation $'] = (allocation_dataframe['Allocation %'] * float(total_mount)/100).round(2)
+    allocation_dataframe['LastPrice $'] = (allocation_dataframe['Ticker'].map(last_prices)).round(2)
     allocation_dataframe['TitlesNum'] = allocation_dataframe['Allocation $'] / allocation_dataframe['LastPrice $']
     
     allocation_dataframe['TitlesNum'] = allocation_dataframe['TitlesNum'].fillna(0).astype(int)
@@ -1580,7 +1574,7 @@ def portolio_optimization2(tickers,total_mount):
 
 
 
-def portolio_optimization(tickers):
+def portfolio_optimization(tickers):
     mount = input("Escribe el monto >> ") 
     driver.get("https://www.portfoliovisualizer.com/optimize-portfolio")
     driver.find_element(By.CSS_SELECTOR, "#timePeriod_chosen span").click()
@@ -2344,7 +2338,7 @@ def swing_trading_recommendations():
         print(len(tickers))
         if len(tickers) >= 1: 
             #tb.send_message(chat_id, "Ejecutando algoritmo de optimización de portafolio...")           
-            df_allocations = portolio_optimization2(tickers,1000000)
+            df_allocations = portfolio_optimization2(tickers,1000000)
             df_result = pd.merge(df_allocations,df,left_on='Ticker',right_on='Símbolo')            
             df_result['Títulos'] = df_result['Allocation $']/df_result['Último3']
             df_result['Títulos'] = df_result['Títulos'].astype('int32') 
@@ -2455,7 +2449,7 @@ def main_menu():
         input("\nPulsa una tecla para continuar")
         main_menu()
     elif opcionmain_menu=="9":
-        input_amount = int(input("Enter the amount to invest (i.e. 800000): "))
+        input_amount = int(float(input("Enter the amount to invest (i.e. 800000): ").replace(',','').replace('$','')))
         input_tickers = str(input("Enter tickers separated by commas (i.e. OMAB,AAPL,BRKB,MSFT): "))
         input_tickers = input_tickers.upper()
         input_tickers_list = input_tickers.split (",")
@@ -2465,7 +2459,7 @@ def main_menu():
         print("\nTickers list : ", tickers)
         print("\nOptimizing portfolio...")
         try:
-            allocation_dataframe = portolio_optimization2(tickers,input_amount)
+            allocation_dataframe = portfolio_optimization2(tickers,input_amount)
             print(allocation_dataframe)
         except Exception as e: 
             print(e)
@@ -2525,7 +2519,6 @@ elif command == 'optimize_portfolio':
     # input comma separated elements as string 
     input_tickers = str(input("Enter tickers separated by commas: "))
     input_tickers = input_tickers.upper()
-    print("Tickers: ", input_tickers)
     # conver to the list
     input_tickers_list = input_tickers.split (",")
     print( "List: ", input_tickers_list)
@@ -2535,7 +2528,7 @@ elif command == 'optimize_portfolio':
         tickers.append(i)
     # print list as integers
     print("list (li) : ", tickers)
-    portolio_optimization2(tickers,10000)
+    portfolio_optimization2(tickers,10000)
 else :
    main_menu()
 #retrieve_top_reto()
