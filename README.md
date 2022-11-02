@@ -1,5 +1,8 @@
 # ractinver
 ```
+var textCopyElement = document.querySelector('#js-screener-container > div.tv-screener__content-pane > table').outerHTML;
+console.log(textCopyElement);
+
 grep -o 'BMV:.*"' stocklist.txt | sed 's/".*/,/g' | sed 's/BMV://g'  | sed 's/\///g' | tr -d \\n | sed 's/PE\_OLES/PE\&OLES/g'
 ```
 ## Getting started

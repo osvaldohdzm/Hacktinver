@@ -1,4 +1,4 @@
-#!/bin/bash
+#/usr/bin/bash
 
 establish_session() {
 	curl -k -s -c -  https://www.retoactinver.com/minisitio/reto/login.html | \
