@@ -1527,9 +1527,9 @@ def display_ef_with_selected(mean_returns, cov_matrix, risk_free_rate,stocks_dat
 
 
 
-def portfolio_optimization2(tickers,total_mount):
+def portfolio_optimization2(tickers,total_mount,initial_year):
     stocks_data = pd.DataFrame()
-    inicio = "2018-01-01"
+    inicio = initial_year 
     fin = datetime.today().strftime('%Y-%m-%d')
     last_prices = {}
     for ticker in tickers:
@@ -2451,6 +2451,7 @@ def main_menu():
     elif opcionmain_menu=="9":
         input_amount = int(float(input("Enter the amount to invest (i.e. 800000): ").replace(',','').replace('$','')))
         input_tickers = str(input("Enter tickers separated by commas (i.e. OMAB,AAPL,BRKB,MSFT): "))
+        input_initial_date = str(input("Enter initial date of historial prices data (i.e. 2018-01-01): "))
         input_tickers = input_tickers.upper()
         input_tickers_list = input_tickers.split (",")
         tickers = []
@@ -2459,7 +2460,7 @@ def main_menu():
         print("\nTickers list : ", tickers)
         print("\nOptimizing portfolio...")
         try:
-            allocation_dataframe = portfolio_optimization2(tickers,input_amount)
+            allocation_dataframe = portfolio_optimization2(tickers,input_amount,input_initial_date)
             print(allocation_dataframe)
         except Exception as e: 
             print(e)
