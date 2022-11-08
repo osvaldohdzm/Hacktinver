@@ -1,0 +1,62 @@
+[
+  {
+    "cxTipoValor": "",
+    "cxEmisora": "",
+    "cxSerie": "",
+    "fnVariacion": 0,
+    "inCantidad72": 0,
+    "fnSaldoM": 82711.654179,
+    "fnPrecioLinea": 0,
+    "fnCosto": 0
+  },
+  {
+    "cxTipoValor": "1I",
+    "cxEmisora": "FAS",
+    "cxSerie": "*",
+    "fnVariacion": 2.57,
+    "inCantidad72": 103,
+    "fnPrecioLinea": 1497.5,
+    "fnSaldoM": 0,
+    "fnCosto": 1498.77345579588
+  },
+  {
+    "cxTipoValor": "1I",
+    "cxEmisora": "SOXL",
+    "cxSerie": "*",
+    "fnVariacion": 6.61,
+    "inCantidad72": 316,
+    "fnPrecioLinea": 198.38,
+    "fnSaldoM": 0,
+    "fnCosto": 196.27006748328
+  },
+  {
+    "cxTipoValor": "1I",
+    "cxEmisora": "SPXL",
+    "cxSerie": "*",
+    "fnVariacion": 1.9300000000000002,
+    "inCantidad72": 106,
+    "fnPrecioLinea": 1240.5,
+    "fnSaldoM": 0,
+    "fnCosto": 1242.08443052712
+  },
+  {
+    "cxTipoValor": "1I",
+    "cxEmisora": "TECL",
+    "cxSerie": "*",
+    "fnVariacion": 4.36,
+    "inCantidad72": 784,
+    "fnPrecioLinea": 458.99,
+    "fnSaldoM": 0,
+    "fnCosto": 461.43491130972
+  },
+  {
+    "cxTipoValor": "1I",
+    "cxEmisora": "TQQQ",
+    "cxSerie": "*",
+    "fnVariacion": 3.2,
+    "inCantidad72": 453,
+    "fnPrecioLinea": 370,
+    "fnSaldoM": 0,
+    "fnCosto": 368.90752490208
+  }
+]

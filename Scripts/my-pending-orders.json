@@ -1,0 +1,20 @@
+{
+  "cxTipoValor": "1I",
+  "cxEsLote": "S",
+  "inNumeroOrden": 11306249,
+  "fnPrecioAsignacion": 0,
+  "inCveOperacion": "COMPRA",
+  "cxSerie": "*",
+  "dtFechaCaptura": "2022-11-08",
+  "fnPrecio": "MERCADO",
+  "dtFechaValor": "2022-11-11",
+  "fnPrecioCalculo": 3940,
+  "cxIpOperacion": "10.10.10.10",
+  "inCantasingada": 0,
+  "inHoraCaptura": "14:11",
+  "cxEmisora": "GUSH",
+  "dtFechaOperacion": "2022-11-08",
+  "cxFaseOperacion": "PENDIENTE",
+  "inCantidad": 15,
+  "cxEstatus": "CANCELADA"
+}
