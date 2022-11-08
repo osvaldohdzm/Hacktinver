@@ -94,3 +94,13 @@ printf "\n\n[$(date +'%r')] Closing session...\n"
 close_session
 printf "\n\n[$(date +'%r')] Deleting temporal files...\n"
 rm SessionInfo*
+
+
+jq '.[].fnPrecioLinea' portfolio.json | \
+while read -r fnPrecioLinea ; do
+    if [[ (( $(echo "$fnPrecioLinea > 1" | bc -l) )) ]]; then 
+      printf "\n$fnPrecioLinea es mayor que cero"
+      else
+      printf "\n$fnPrecioLinea NO es mayor que cero"
+     fi
+done
