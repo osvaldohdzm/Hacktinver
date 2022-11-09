@@ -46,7 +46,7 @@ curl -s "https://www.retoactinver.com/reto/app/usuarios/compra/portafolios?usuar
   -H "user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.63 Safari/537.36" \
   --compressed \
   --insecure | \
-    jq '.collection' > portfolio.json
+   jq '.collection |= map(select(.cxEmisora | length > 0))' | jq '.collection' > portfolio.json
 }
 
 check_file() {
@@ -95,12 +95,12 @@ close_session
 printf "\n\n[$(date +'%r')] Deleting temporal files...\n"
 rm SessionInfo*
 
-
-jq '.[].fnPrecioLinea' portfolio.json | \
+earn_percentage="1.5"
+jq '.[] | .rendimiento = ( (.fnPrecioLinea - .fnCosto) / .fnCosto ) * 100 | .rendimiento' portfolio.json | \
 while read -r fnPrecioLinea ; do
-    if [[ (( $(echo "$fnPrecioLinea > 1" | bc -l) )) ]]; then 
-      printf "\n$fnPrecioLinea es mayor que cero"
-      else
-      printf "\n$fnPrecioLinea NO es mayor que cero"
+     if [ $(bc <<< "$fnPrecioLinea >= $earn_percentage") -eq 1 ]; then
+      printf "\n$fnPrecioLinea es mayor"
+     else
+      printf "\n$fnPrecioLinea NO es mayor"
      fi
 done
