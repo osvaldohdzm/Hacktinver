@@ -1,3 +1,18 @@
+
+## Estraegias SWING TRADING 
+
+en la bolsa 1 acciones 
+
+configuracion estado estado tecnico 
+- venta
+- venta 
+- compra
+
+indices etf especufixos 
+
+- SOXL
+- TEC 
+
 ## URL
 
 https://www.retoactinver.com/minisitio/reto/login.html
