@@ -6,77 +6,71 @@ SyntaxError: Failed to execute 'evaluate' on 'Document': The string './/header/'
 
 $$("header[id=]")
 """
-import argparse
-import csv
-import datetime
-import emoji
-import html5lib
-import math
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-import numpy as np
-import os
-import os.path
-import pandas as pd
-import pandas.io.formats.style
-import pandas_datareader.data as web
-import pdfkit
-import pytest
-import requests
-import schedule
-import sys
-import telebot # Importamos las librería
-import telegram # python-telegram-bot
-import threading
-import time
+import yfinance as yf
 import warnings
-import pandas as pd  
-import numpy as np
-import matplotlib.pyplot as plt
+import time
+import threading
+import telegram 
+import telebot 
+import sys
 import seaborn as sns
 import scipy.optimize as sco
-from pypfopt import EfficientFrontier
+import schedule
+import requests
+import pytest
+import pdfkit
+import pandas.io.formats.style
+import pandas_datareader.data as web
+import pandas as pd  
+import pandas as pd
+import os.path
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import math
+import html5lib
+import emoji
+import datetime
+import csv
+import argparse
+
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from urllib.request import urlopen, Request
+from telebot import types
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.pipeline import make_pipeline
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import Ridge
+from sklearn.linear_model import LinearRegression
+from sklearn import preprocessing, svm
+from selenium.webdriver.support.wait import WebDriverWait
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support import expected_conditions
+from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium import webdriver
+from re import sub
 from pypfopt import risk_models
 from pypfopt import expected_returns
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.action_chains import ActionChains
-import yfinance as yf
-
-
-from bs4 import BeautifulSoup
-from bs4 import BeautifulSoup  #del módulo bs4, necesitamos BeautifulSoup
-from datetime import datetime
-from datetime import timedelta
-from decimal import Decimal
-from matplotlib import style
-from matplotlib.backends.backend_pdf import PdfPages
-from pandas import Series, DataFrame
-from pandas.plotting import scatter_matrix
+from pypfopt import EfficientFrontier
 from pathlib import Path
-from re import sub
-from selenium import webdriver
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.firefox.options import Options
-from selenium.webdriver.support import expected_conditions
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support.wait import WebDriverWait
-from sklearn import preprocessing, svm
-from sklearn.linear_model import LinearRegression
-from sklearn.linear_model import Ridge
-from sklearn.model_selection import train_test_split
-from sklearn.neighbors import KNeighborsRegressor
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import PolynomialFeatures
-from telebot import types
-from urllib.request import urlopen, Request
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from pandas.plotting import scatter_matrix
+from pandas import Series, DataFrame
+from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib import style
+from decimal import Decimal
+from datetime import timedelta
+from datetime import datetime
+from bs4 import BeautifulSoup 
+from bs4 import BeautifulSoup
+
 
 
 yf.pdr_override()
@@ -117,6 +111,13 @@ comision_per_operation = 0.0010
 iva_per_operation = 0.16
 cost_per_operation = (comision_per_operation)+(comision_per_operation*iva_per_operation)
 dn = os.path.dirname(os.path.realpath(__file__)) 
+
+def clear_screen():
+    print(os.name)
+    if os.name == 'posix':
+        os.system('clear')  # Comando para limpiar la pantalla en sistemas tipo Unix (Linux)
+    else:
+        os.system('cls')    # Comando para limpiar la pantalla en sistemas Windows
 
 
 def configure_firefox_driver_no_profile():
@@ -1412,13 +1413,14 @@ def min_variance(mean_returns, cov_matrix):
 
     return result
 
+def portfolio_return(weights):
+    return portfolio_annualised_performance(weights, mean_returns, cov_matrix)[1]
+
+
 def efficient_return(mean_returns, cov_matrix, target):
     num_assets = len(mean_returns)
     args = (mean_returns, cov_matrix)
-
-    def portfolio_return(weights):
-        return portfolio_annualised_performance(weights, mean_returns, cov_matrix)[1]
-
+    
     constraints = ({'type': 'eq', 'fun': lambda x: portfolio_return(x) - target},
                    {'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
     bounds = tuple((0,1) for asset in range(num_assets))
@@ -2418,72 +2420,144 @@ def solve_daily_quizz():
     threading.Thread(target=daily_quizz_solver,args=('Gabriela62','copito55','hernandezsg62@outlook.com',1)).start()
     threading.Thread(target=daily_quizz_solver,args=('kikehedz22','E93h14M01','enrique45_v@hotmail.com',2)).start()
     
- 
+def set_optimizar_portafolio():
+   input_amount = int(float(input("Enter the amount to invest (i.e. 800000): ").replace(',','').replace('$','')))
+   input_tickers = str(input("Enter tickers separated by commas (i.e. OMAB,AAPL,BRKB,MSFT): "))
+   input_initial_date = str(input("Enter initial date of historial prices data (i.e. 2018-01-01): "))
+   input_tickers = input_tickers.replace(" ", "")
+   input_tickers = input_tickers.upper()
+   input_tickers_list = input_tickers.split(",")
+   tickers = []
+   for i in input_tickers_list:
+       tickers.append(i)
+   print("\nTickers list : ", tickers)
+   print("\nOptimizing portfolio...")
+   try:
+       allocation_dataframe = portfolio_optimization2(tickers,input_amount,input_initial_date)
+       print(allocation_dataframe)
+   except Exception as e: 
+       print(e)
+   input("\nPulsa una tecla para continuar")
+
+def show_portfolio():
+    print("Función provisional para Mostrar portafolio")
+
+def buy_stocks():
+    print("Función provisional para Comprar acciones")
+
+def show_orders():
+    print("Función provisional para Mostrar órdenes")
 
 def main_menu():
-    os.system('cls')
-    print ("Selecciona una opción")
-    print ("\t1 - Iniciar sesión en la plataforma del reto")
-    print ("\t2 - Mostrar sugerencias de compra")
-    print ("\t3 - Mostrar portafolio actual")
-    print ("\t4 - Comprar acciones")
-    print ("\t5 - Mostrar ordenes")
-    print ("\t6 - Monitorear venta")
-    print ("\t7 - Vender todas las posiciones en portafolio (a precio del mercado)")
-    print ("\t8 - Restaurar sesión en plataforma del reto")
-    print ("\t9 - Optimizar portafolio")
-    print ("\t0 - Salir")
+    while True:
+        clear_screen()
+        print("Selecciona una opción:")
+        menu_options = {
+            '1': "Utilidades de Reto Actinver 2023",
+            '2': "Optimizar cartera",
+            '0': "Salir"
+        }
 
-    opcionmain_menu = input("Selecciona una opción >> ") 
-    if opcionmain_menu=="1":           
-        login_platform_actinver()
-        input("\nPulsa una tecla para continuar")
-        main_menu()
-    elif opcionmain_menu=="2":
-        sub_main_menu_2()
-    elif opcionmain_menu=="3":        
-        show_portfolio()
-        input("\nPulsa una tecla para continuar")
-        main_menu()
-    elif opcionmain_menu=="4":
-        buy_stocks()
-        input("\nPulsa una tecla para continuar")
-        main_menu()
-    elif opcionmain_menu=="5":
-        show_orders()
-        input("\nPulsa una tecla para continuar")
-        main_menu()
-    elif opcionmain_menu=="6":        
-        input("\nPulsa una tecla para continuar")
-        main_menu()
-    elif opcionmain_menu=="7":        
-        input("\nPulsa una tecla para continuar")
-        main_menu()
-    elif opcionmain_menu=="9":
-        input_amount = int(float(input("Enter the amount to invest (i.e. 800000): ").replace(',','').replace('$','')))
-        input_tickers = str(input("Enter tickers separated by commas (i.e. OMAB,AAPL,BRKB,MSFT): "))
-        input_initial_date = str(input("Enter initial date of historial prices data (i.e. 2018-01-01): "))
-        input_tickers = input_tickers.upper()
-        input_tickers_list = input_tickers.split (",")
-        tickers = []
-        for i in input_tickers_list:
-            tickers.append(i)
-        print("\nTickers list : ", tickers)
-        print("\nOptimizing portfolio...")
-        try:
-            allocation_dataframe = portfolio_optimization2(tickers,input_amount,input_initial_date)
-            print(allocation_dataframe)
-        except Exception as e: 
-            print(e)
-        input("\nPulsa una tecla para continuar")        
-        main_menu()
-    elif opcionmain_menu=="0":
-        #logout_platform_actinver()
-        #driver.close()
-        exit()
-    else:
-        input("No has pulsado ninguna opción correcta...\nPulsa una tecla para continuar")
-        main_menu()
+        for key, value in menu_options.items():
+            print(f"\t{key} - {value}")
+
+        opcion_main_menu = input("Selecciona una opción >> ")
+
+        if opcion_main_menu in menu_options:
+            if opcion_main_menu == "0":
+                break
+            else:
+                clear_screen()
+                option_functions = {
+                    '1': utilidades_actinver_2023,
+                    '2': set_optimizar_portafolio,
+                }
+                option_functions[opcion_main_menu]()
+        else:
+            input("No has pulsado ninguna opción correcta...\nPulsa una tecla para continuar")
+
+
+def option_1():
+    print("Función provisional para la opción 1")
+
+def option_2():
+    print("Función provisional para la opción 2")
+
+def option_3():
+    print("Función provisional para la opción 3")
+
+def option_4():
+    print("Función provisional para la opción 4")
+
+def option_5():
+    print("Función provisional para la opción 5")
+
+def option_6():
+    print("Función provisional para la opción 6")
+
+def option_7():
+    print("Función provisional para la opción 7")
+
+def option_8():
+    print("Función provisional para la opción 8")
+
+def option_9():
+    print("Función provisional para la opción 9")
+
+def option_10():
+    print("Función provisional para la opción 10")
+
+def option_11():
+    print("Función provisional para la opción 11")
+
+
+def utilidades_actinver_2023():
+    while True:
+        clear_screen()
+        print("Selecciona una opción:")
+        menu_options = {
+            '1': "Iniciar sesión en la plataforma del reto",
+            '2': "Obtener pregunta de Quizz diario",
+            '3': "Resolver Quizz diario",
+            '4': "Programar respuesta automática de Quizz diario",
+            '5': "Mostrar sugerencias de compra",
+            '6': "Mostrar portafolio actual",
+            '7': "Comprar acciones",
+            '8': "Mostrar órdenes",
+            '9': "Monitorear venta",
+            '10': "Vender todas las posiciones en portafolio (a precio del mercado)",
+            '11': "Restaurar sesión en plataforma del reto",
+            '0': "Regresar"
+        }
+
+        for key, value in menu_options.items():
+            print(f"\t{key} - {value}")
+
+        opcion_main_menu = input("Selecciona una opción >> ")
+
+        if opcion_main_menu in menu_options:
+            if opcion_main_menu == "0":
+                break
+            else:
+                clear_screen()
+                print(f"Has seleccionado: {menu_options[opcion_main_menu]}")
+                input("\nPulsa una tecla para continuar")
+                # Llama a la función asociada a la opción seleccionada
+                option_functions = {
+                    '1': option_1,
+                    '2': option_2,
+                    '3': option_3,
+                    '4': option_4,
+                    '5': option_5,
+                    '6': option_6,
+                    '7': option_7,
+                    '8': option_8,
+                    '9': option_9,
+                    '10': option_10,
+                    '11': option_11
+                }
+                option_functions[opcion_main_menu]()
+
 
 def sub_main_menu_2():
     os.system('cls')
