@@ -5,6 +5,40 @@ import os
 import datetime
 
 
+
+def es_dia_laborable(fecha):
+    # Comprueba si la fecha proporcionada es un día laborable (lunes a viernes)
+    return 0 <= fecha.weekday() <= 4
+
+def descarga_datos(url, headers, data, hora_actual):
+    print("Iniciando descarga...")
+
+    # Obtener la fecha actual
+    now = datetime.datetime.now()
+
+    # Comprobar si hoy es un día laborable
+    if es_dia_laborable(now):
+        # Formatear la fecha y hora actual en el formato deseado
+        timestamp = now.strftime("%Y-%m-%d-%H-%M-%S")
+
+        current_directory = os.getcwd()
+
+        # Crear el nombre completo del archivo con la ruta completa
+        nombre_archivo = os.path.join(current_directory, f'TradingViewData/trading-view-data-{timestamp}.json')
+
+        response = requests.post(url, headers=headers, json=data)
+
+        with open(nombre_archivo, 'w') as json_file:
+            json.dump(response.json(), json_file, indent=4)
+
+        print(f'Archivo JSON descargado a las {hora_actual} y guardado como {nombre_archivo}')
+
+    else:
+        print("Hoy no es un día laborable. No se realizará la descarga de datos.")
+
+    print("Descargando datos de forma programada, esperando horario...")
+
+        
 # Lista de horas en las que deseas ejecutar la descarga del archivo JSON (en formato 24 horas)
 horas_programadas = ["09:00", "14:00"]
 
@@ -628,32 +662,17 @@ data = {"filter": [],
 
 print("Descargando datos de forma programada, esperando horario...")
 
+hora_actual = time.strftime("%H:%M")
+descarga_datos(url, headers, data, hora_actual)    
+
+
 while True:
     # Obtener la hora actual
     hora_actual = time.strftime("%H:%M")
 
     # Si la hora actual coincide con alguna hora programada, realiza la descarga
     if hora_actual in horas_programadas:
-        print("Iniciando descarga...")
-        response = requests.post(url, headers=headers, json=data)
-
-        # Obtener la fecha y hora actual
-        now = datetime.datetime.now()
-
-        # Formatear la fecha y hora actual en el formato deseado
-        timestamp = now.strftime("%Y-%m-%d-%H-%M-%S")
-
-        current_directory = os.getcwd()
-
-        # Crear el nombre completo del archivo con la ruta completa
-        nombre_archivo = os.path.join(current_directory, f'TradingViewData/trading-view-data-{timestamp}.json')
-
-        with open(nombre_archivo, 'w') as json_file:
-            json.dump(response.json(), json_file, indent=4)
-
-        print(f'Archivo JSON descargado a las {hora_actual} y guardado como {nombre_archivo}')
-
-        print("Descargando datos de forma programada, esperando horario...")
+       descarga_datos(url, headers, data, hora_actual)        
 
     # Esperar 1 minuto antes de volver a verificar la hora
     time.sleep(60)

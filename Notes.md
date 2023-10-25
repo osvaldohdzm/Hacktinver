@@ -13,6 +13,16 @@ indices etf especufixos
 - SOXL
 - TEC 
 
+
+GDX
+SLV
+TLT
+
+SOXL SOXS
+TECL TECS
+SPXL SPXS TQQQ
+
+
 ## URL
 
 https://www.retoactinver.com/minisitio/reto/login.html

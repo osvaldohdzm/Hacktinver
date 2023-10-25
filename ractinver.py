@@ -42,6 +42,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
+import yfinance as yf
 
 
 from bs4 import BeautifulSoup
@@ -76,6 +77,9 @@ from sklearn.preprocessing import PolynomialFeatures
 from telebot import types
 from urllib.request import urlopen, Request
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+
+yf.pdr_override()
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 TOKEN = '1967618042:AAG2sfJp5iTUCqirtW8txriCaVkanum1QNU' # Ponemos nuestro Token generado con el @BotFather
@@ -1527,19 +1531,23 @@ def display_ef_with_selected(mean_returns, cov_matrix, risk_free_rate,stocks_dat
 
 
 
-def portfolio_optimization2(tickers,total_mount,initial_year):
+def portfolio_optimization2(tickers,total_mount,initial_date):
     stocks_data = pd.DataFrame()
-    inicio = initial_year 
+    inicio = initial_date 
     fin = datetime.today().strftime('%Y-%m-%d')
     last_prices = {}
     for ticker in tickers:
         try:
-            stocks_data[ticker] = web.DataReader(ticker+".MX", data_source='yahoo', start=inicio, end=fin)["Adj Close"]
-            last_prices[ticker] = stocks_data.iloc[-1, stocks_data.columns.get_loc(ticker)]
+            ticker_data = yf.download(ticker + ".MX", start=inicio, end=fin)
+            if not ticker_data.empty:
+                stocks_data[ticker] = ticker_data["Adj Close"]
+                last_prices[ticker] = stocks_data[ticker].iloc[-1]
+            else:
+                raise Exception(f"No data available for the ticker {ticker}")
         except Exception as e:
-            print("Error al obtener los datos ")
+            print(f"Error al obtener los datos para el ticker {ticker}")
             print(e)
-
+    
     allocation_dataframe = pd.DataFrame()
 
     try:
@@ -1560,7 +1568,10 @@ def portfolio_optimization2(tickers,total_mount,initial_year):
         print("\nSomething went wrong, making uniform distribution...")
         allocation_dataframe = pd.DataFrame(stocks_data.columns, columns=['Ticker'])
         tickers_count = len(allocation_dataframe.index)
-        allocation_dataframe['Allocation %'] = 1 / tickers_count
+        if tickers_count > 0:
+            allocation_dataframe['Allocation %'] = 1 / tickers_count
+        else:
+            print("No valid data available to distribute.")
     allocation_dataframe['Allocation %'] = allocation_dataframe['Allocation %'] * 100
     allocation_dataframe['Allocation %'] = (allocation_dataframe['Allocation %'].apply(lambda x: 45.0 if x > 45.0 else x)).round(2)
     allocation_dataframe['Allocation $'] = (allocation_dataframe['Allocation %'] * float(total_mount)/100).round(2)
