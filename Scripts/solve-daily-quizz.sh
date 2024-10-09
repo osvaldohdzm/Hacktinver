@@ -1,7 +1,7 @@
 #!/bin/bash
 
 establish_session() {
-	curl -k -s -c -  https://www.retoactinver.com/minisitio/reto/login.html | \
+	curl -k -s -c -  https://www.retoactinver.com/minisitio/reto/login/ | \
 	grep -E 'TS016e21d6' | \
 	sed "s/.*TS016e21d6\t//g" | \
 	xargs -I %arg%  printf "\n{ \"TS016e21d6\" : \"%arg%\" }" > SessionInfoTmp01.json && \
