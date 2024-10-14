@@ -100,8 +100,11 @@ if system() == 'Windows':
 else:
     from getch import getch
 
+# Crear un evento para detener el hilo si es necesario
 stop_event = threading.Event()
-thread = None
+
+# Iniciar el scheduler en un hilo separado
+scheduler_thread = None
 scheduled_tasks = []
 
 console = Console()
@@ -2754,6 +2757,10 @@ def news_analysis(tickers=["AAPL", "TSLA", "AMZN"]):
     # Usar los tickers ingresados si no están vacíos
     if input_tickers.strip():
         tickers = [ticker.strip() for ticker in input_tickers.split(",")]
+    else:
+        console.print(
+            f"\n[bold yellow] No se detectó entrada, usando valores sugeridos por defecto...[/bold yellow]"
+        )
 
     sia = SentimentIntensityAnalyzer()
     driver = configure_chrome_headless_driver_no_profile()
@@ -4398,7 +4405,8 @@ def fundamental_analysis():
         "SOFI.MX": "Fintech",
         "NU.MX": "Fintech",
     }
-
+    
+    
     # Obtener sectores disponibles
     sectores = sorted(list(set(acciones_por_sector.values())))
 
@@ -4410,6 +4418,10 @@ def fundamental_analysis():
     for idx, sector in enumerate(sectores, 1):
         table.add_row(str(idx), sector)
 
+    console.print(
+            f"\n[bold yellow] Mercado de valores a seleccionar : [/bold yellow] [bold green] Bolsa Mexicana de Valores (BMV) (Único disponible) [/bold green]\n"
+        )
+    
     console.print(table)
 
     # Permitir selección de múltiples sectores
@@ -4420,6 +4432,9 @@ def fundamental_analysis():
     
     # Verificar si la entrada está vacía
     if seleccion.strip() == "":
+        console.print(
+            f"\n[bold yellow] No se detectó entrada, usando valores sugeridos por defecto...[/bold yellow]"
+        )
         indices_seleccionados = [i - 1 for i in valores_por_defecto]
     else:
         # Convertir la entrada en una lista de índices
@@ -4455,6 +4470,66 @@ def fundamental_analysis():
             "[bold red]No se encontraron acciones que cumplan con los criterios fundamentales.[/bold red]"
         )
 
+def suggest_stocks_by_preferences():
+    console = Console()
+    
+    # Diccionario de acciones según criterios de preferencia
+    stock_preferences = {
+        "ecología": ["TSLA", "NIO", "ENPH"],  # Ejemplo de acciones relacionadas con ecología
+        "bienestar animal": ["ZOOM", "WOOF"],  # Ejemplo de acciones de empresas de bienestar animal
+        "tecnología": ["AAPL", "MSFT", "GOOGL", "NVDA", "AMD", "PYPL", "META", "INTC", "CSCO", "QCOM", "ORCL", "AVGO", "CRM", "ADBE", "AMAT", "PLTR", "SQ"],  # Acciones tecnológicas
+        "salud": ["JNJ", "PFE", "GILD", "MRK", "LLY", "BMY", "UNH", "MRNA", "CVS"],  # Acciones en el sector salud
+        "financiero": ["JPM", "WFC", "BAC", "AXP", "C", "BRKB", "GS", "V", "MA"],  # Acciones en el sector financiero
+        "energía": ["XOM", "VLO", "CVX", "FANG", "DVN", "APA", "MRO"],  # Acciones en el sector energético
+        "industriales": ["BA", "GE", "CAT", "FDX", "UPS", "DE", "RTX", "LUV"],  # Acciones industriales
+        "materiales": ["CEMEXCPO", "GAPB", "VITROA", "PE&OLES", "GCC", "ORBIA", "FCX", "CLF"],  # Acciones en materiales
+        "consumo": ["WMT", "COST", "MCD", "TSLA", "NKE", "SBUX", "AMXB", "BIMBOA", "DIS", "NFLX", "PINS", "ETSY", "TGT", "WALMEX", "LIVEPOL", "BABA"],  # Acciones en consumo
+        "productos": {
+            "iphone": ["AAPL"],  # Si mencionan iPhone, sugerir Apple
+            "laptop": ["MSFT", "AAPL"],  # Mencionar laptops sugiere Microsoft y Apple
+            "surface": ["MSFT"],  # Mencionar Surface sugiere Microsoft
+            "computadoras": ["NVDA", "DELL"],  # Mencionar computadoras sugiere Nvidia y Dell
+            "café": ["SBUX"]
+        }
+    }
+
+    # Obtener entradas del usuario
+    stocks_input = input("Introduce acciones directamente por símbolo (ejemplo: NFLX, MSFT, AAPL): ")
+    companies_input = input("Introduce nombres de empresas que te gusten (ejemplo: Microsoft, Apple): ")
+    products_input = input("Introduce productos favoritos (ejemplo: iphone, laptop): ")
+
+    # Procesar las entradas
+    user_stocks = [stock.strip().upper() for stock in stocks_input.split(",") if stock.strip()]
+    user_companies = [company.strip().lower() for company in companies_input.split(",") if company.strip()]
+    user_products = [product.strip().lower() for product in products_input.split(",") if product.strip()]
+
+    suggested_stocks = set()  # Usar un set para evitar duplicados
+
+    # Agregar automáticamente todas las acciones introducidas por el usuario
+    suggested_stocks.update(user_stocks)
+
+    # Agregar acciones basadas en nombres de empresas introducidos
+    for company in user_companies:
+        if company == "microsoft":
+            suggested_stocks.update(stock_preferences["tecnología"][1:2])  # MSFT
+        elif company == "apple":
+            suggested_stocks.update(stock_preferences["tecnología"][:1])  # AAPL
+
+    # Agregar acciones basadas en productos introducidos
+    for product in user_products:
+        if product in stock_preferences["productos"]:
+            suggested_stocks.update(stock_preferences["productos"][product])
+
+    # Convertir el conjunto a lista
+    
+    suggestions = list(suggested_stocks)
+    final_suggestions = [stock if stock.endswith(".MX") else f"{stock}.MX" for stock in suggested_stocks]
+
+    # Imprimir las sugerencias
+    console.print(
+        f"\n[bold yellow]Sugerencias de acciones:[/bold yellow] [green]{', '.join(final_suggestions)}[/green]"
+    )
+
 
 def suggest_technical_soon_results():
     # Lista de tickers por defecto
@@ -4469,6 +4544,9 @@ def suggest_technical_soon_results():
     if input_tickers.strip():  # Si se ingresaron tickers, usarlos
         tickers = [ticker.strip() for ticker in input_tickers.split(",")]
     else:
+        console.print(
+            f"\n[bold yellow] No se detectó entrada, usando valores sugeridos por defecto...[/bold yellow]"
+        )
         tickers = default_tickers  # Usar los tickers por defecto
 
     resultados = []  # Para almacenar los resultados
@@ -4518,15 +4596,25 @@ def suggest_technical_soon_results():
 
     # Crear un DataFrame a partir de los resultados
     df_resultados = pd.DataFrame(resultados)
+        
+    # Convertir la columna 'Earnings Date' a tipo datetime
+    df_resultados['Earnings Date'] = pd.to_datetime(df_resultados['Earnings Date'])
+    
+    # Ordenar el DataFrame por 'Earnings Date' en orden ascendente
+    df_resultados = df_resultados.sort_values(by='Earnings Date')
+    
+    # Reiniciar los índices (opcional)
+    df_resultados.reset_index(drop=True, inplace=True)
 
     # Imprimir la tabla de resultados
     print("\nResumen de Fechas de Resultados:\n")
     print(df_resultados if not df_resultados.empty else "No se encontraron resultados.")
 
     # Mostrar recomendaciones
-    print(
-        f"\nAcciones recomendadas para comprar:\n {', '.join(acciones_comprar) if acciones_comprar else 'Ninguna'}"
-    )
+    console.print(
+            f"\n[bold yellow] Acciones recomendadas para compra priotaria:\n {', '.join(acciones_comprar) if acciones_comprar else 'Ninguna'} [/bold yellow]"
+        )
+
 
 
 def suggest_technical_etf(
@@ -4540,6 +4628,10 @@ def suggest_technical_etf(
 
     if input_tickers.strip():  # Si se ingresaron tickers, usarlos
         tickers = [ticker.strip() for ticker in input_tickers.split(",")]
+    else:
+        console.print(
+            f"\n[bold yellow] No se detectó entrada, usando valores sugeridos por defecto...[/bold yellow]"
+        )
 
     resultados = []  # Para almacenar los resultados
     etf_comprar = []  # Para las ETFs recomendadas para comprar
@@ -4583,21 +4675,20 @@ def suggest_technical_etf(
 
             # Condiciones de compra
             condiciones_compra = (
-                # Primera condición: indicadores positivos y variación negativa
                 (
                     rsi_actual < 60
                     and stochastic_actual < 40
-                    and macd_actual > 0
+                    and macd_actual > -0.05
                     and close_hoy < bollinger_low
                     and variacion_diaria < 0
                 )
                 or
-                # Segunda condición: valores en rangos ajustados
                 (
                     rsi_actual < 60
                     and stochastic_actual < 80
-                    and macd_actual > 0
+                    and macd_actual > -0.05
                     and bollinger_low < close_hoy < bollinger_high
+                    and variacion_diaria < 0
                 )
             )
 
@@ -4632,6 +4723,9 @@ def suggest_technical_etf(
 
     # Crear un DataFrame a partir de los resultados
     df_resultados = pd.DataFrame(resultados)
+    os.makedirs('data', exist_ok=True)    
+    csv_file_path = f'data/suggest_technical_etf_{datetime.now():%Y%m%d_%H%M%S}.csv'
+    df_resultados.to_csv(csv_file_path, index=False)
 
     # Imprimir la tabla de resultados
     print("\n[bold cyan]Resumen de Indicadores Técnicos:[/bold cyan]\n")
@@ -4657,6 +4751,10 @@ def suggest_technical_etf_leveraged(
 
     if input_tickers.strip():  # Si se ingresaron tickers, usarlos
         tickers = [ticker.strip() for ticker in input_tickers.split(",")]
+    else:
+        console.print(
+            f"\n[bold yellow] No se detectó entrada, usando valores sugeridos por defecto...[/bold yellow]"
+        )
 
     resultados = []  # Para almacenar los resultados
     etf_comprar = []  # Para las ETFs recomendadas para comprar
@@ -4715,6 +4813,7 @@ def suggest_technical_etf_leveraged(
                     and stochastic_actual < 80
                     and macd_actual > 0
                     and bollinger_low < close_hoy < bollinger_high
+                    and variacion_diaria < 0
                 )
             )
 
@@ -4749,7 +4848,9 @@ def suggest_technical_etf_leveraged(
 
     # Crear un DataFrame a partir de los resultados
     df_resultados = pd.DataFrame(resultados)
-
+    os.makedirs('data', exist_ok=True)    
+    csv_file_path = f'data/suggest_technical_etf_leveraged_{datetime.now():%Y%m%d_%H%M%S}.csv'
+    df_resultados.to_csv(csv_file_path, index=False)
     # Imprimir la tabla de resultados
     print("\n[bold cyan]Resumen de Indicadores Técnicos:[/bold cyan]\n")
     print(df_resultados)
@@ -4792,6 +4893,10 @@ def suggest_technical(
 
     if input_tickers.strip():  # Si se ingresaron tickers, usarlos
         tickers = [ticker.strip() for ticker in input_tickers.split(",")]
+    else:
+        console.print(
+            f"\n[bold yellow] No se detectó entrada, usando valores sugeridos por defecto...[/bold yellow]"
+        )
 
     resultados = []  # Para almacenar los resultados
     acciones_comprar = []  # Para las acciones recomendadas para comprar
@@ -4907,6 +5012,9 @@ def set_optimizar_portafolio():
         input("Enter tickers separated by commas (i.e. OMAB,AAPL,META,MSFT): ")
     )
     if not input_tickers:  # Si el usuario no ingresa nada
+        console.print(
+            f"\n[bold yellow] No se detectó entrada, usando valores sugeridos por defecto...[/bold yellow]"
+        )
         input_tickers = "OMAB,AAPL,META,MSFT"  # Valor por defecto
     input_initial_date = str(
         input("Enter initial date of historial prices data (i.e. 2018-01-01): ")
@@ -5007,7 +5115,7 @@ def establish_session(
 
             # Merge the session data and save to the final file
             with open("data/SessionInfoTmp01.json") as file1, open(
-                "SessionInfoTmp02.json"
+                "data/SessionInfoTmp02.json"
             ) as file2:
                 session_info = json.load(file1)
                 session_info.update(json.load(file2))
@@ -5017,6 +5125,8 @@ def establish_session(
             with open("data/SessionInfo.json", "w") as file:
                 json.dump(session_info, file)
                 print("Merged session info saved to 'SessionInfo.json'.")
+            print("Datos de inicio de sesión:")
+            print(session_info)
         else:
             print("Token 'TS016e21d6' not found in cookies.")
 
@@ -5026,9 +5136,12 @@ def establish_session(
 
 # Recupera la sesión guardada
 def recover_session():
-    print("Recuperación sesión de usuario en SessionInfo.json")
+    print("Actualización datos de sesión de usuario en SessionInfo.json")
     with open("data/SessionInfo.json") as file:
         session_info = json.load(file)
+        
+    print("Sessión info actual session_info")
+    print(session_info)
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.5249.62 Safari/537.36",
@@ -5036,18 +5149,22 @@ def recover_session():
 
     session = requests.Session()
     cookies = {
-        "tokenapp": session_info["tokenApp"],
         "TS016e21d6": session_info["TS016e21d6"],
+        "tokenapp": session_info["tokenApp"],        
         "tokensesion": session_info["tokenSession"],
     }
 
     recovery_response = session.post(
-        f'https://www.retoactinver.com/reto/app/usuarios/session/recoveryTokenSession?user=osvaldo.hdz.m@outlook.com&tokenApp={session_info["tokenApp"]}',
+        f'https://www.retoactinver.com/reto/app/usuarios/session/recoveryTokenSession?user={session_info["cxCveUsuario"]}&tokenApp={session_info["tokenApp"]}',
         cookies=cookies,
         headers=headers,
     )
 
-    session_info["tokenSession"] = recovery_response.json()["cxValue"]
+    print(recovery_response.text)
+    session_info["tokenSession"] = recovery_response.json()["cxValue"]  
+    
+    print("Sessión info nueva session_info") 
+         
 
     with open("data/SessionInfo.json", "w") as file:
         json.dump(session_info, file)
@@ -5114,9 +5231,21 @@ def get_daily_quizz():
             delete_file_if_exists("SessionQuizData.json")
             return
     else:
-        quiz_data["collection"][0]["Pregunta"]["respuestas"] = quiz_data["collection"][0]["Pregunta"]["respuestas"][:3]    
-        with open("data/SessionQuizData.json", "w") as file:
-            json.dump(quiz_data, file)
+        try:
+            # Intentamos obtener la pregunta
+            pregunta = quiz_data["collection"][0]["Pregunta"]["Pregunta"]["pregunta"]
+            print(pregunta)
+
+            # Limitar las respuestas a las primeras 3
+            quiz_data["collection"][0]["Pregunta"]["respuestas"] = quiz_data["collection"][0]["Pregunta"]["respuestas"][:3]
+
+            # Guardar los datos en un archivo
+            with open("data/SessionQuizData.json", "w") as file:
+                json.dump(quiz_data, file)
+        
+        except KeyError as e:
+            # Manejo de excepción si la clave "Pregunta" no existe
+            print(f"Error: {str(e)} - Es posible que la pregunta aún no se haya publicado o haya sido respondida anteriormente.")
 
 
 # Envía la respuesta del cuestionario
@@ -5128,11 +5257,15 @@ def send_quizz_answer():
     # Load session information from temporary JSON file
     with open("data/SessionQuizData.json") as tmp_file:
         quiz_data = json.load(tmp_file)
+        
+    print(quiz_data["collection"][0]["Pregunta"]["respuestas"])
     
     # Extract the first response ID from the JSON and select a random ID in the range
     first_response_id = quiz_data["collection"][0]["Pregunta"]["respuestas"][0][
         "idRespuesta"
     ]
+    
+    random.seed(time.time_ns())
     random_id = random.randint(first_response_id, first_response_id + 2)
 
     print(f"\n\nAnswering with idRespuesta: {random_id}")
@@ -5161,16 +5294,18 @@ def send_quizz_answer():
         "tokenapp": session_info["tokenApp"],
         "TS016e21d6": session_info["TS016e21d6"],
         "tokensesion": session_info["tokenSession"],
+        "cxCveUsuario": session_info["cxCveUsuario"],
     }
 
     # Construct the URL with the random idRespuesta
-    url = f'https://www.retoactinver.com/reto/app/quiz/contestarQuiz?cveUsuario=osvaldo.hdz.m@outlook.com&idRespuesta={random_id}&cx_tokenSesionApl={session_info["tokenSession"]}&cx_token_app={session_info["tokenApp"]}&tokenApp={session_info["tokenApp"]}&tokenSession={session_info["tokenSession"]}'
+    url = f'https://www.retoactinver.com/reto/app/quiz/contestarQuiz?cveUsuario={session_info["cxCveUsuario"]}&idRespuesta={random_id}&cx_tokenSesionApl={session_info["tokenSession"]}&cx_token_app={session_info["tokenApp"]}&tokenApp={session_info["tokenApp"]}&tokenSession={session_info["tokenSession"]}'
 
     # Send the POST request
     response = requests.post(url, headers=headers, cookies=cookies)
 
     # Print the response status
     print(f"Response Status Code: {response.status_code}")
+    print(response.text)
     if response.ok:
         print("Answer submitted successfully!")
     else:
@@ -5179,11 +5314,11 @@ def send_quizz_answer():
 
 def answer_quiz_daily_contest_actinver():
     clear_screen()
-    console.print("[bold blue] Ejecutando tarea programada, espera un momento !\n[/bold blue]")
     # Osva
     establish_session(login_data={"usuario": "osvaldo.hdz.m@outlook.com", "password": "299792458.Light"})
     recover_session()
     get_daily_quizz()
+    recover_session()
     send_quizz_answer()
     close_session()
     # Montse
@@ -5192,19 +5327,23 @@ def answer_quiz_daily_contest_actinver():
     get_daily_quizz()
     send_quizz_answer()
     close_session()
+    Prompt.ask("[bold blue]Pulsa Enter para continuar...[/bold blue]")
+    display_menu(0)
+
 
 def mock_quiz_function():
-    clear_screen() 
     print("Función de prueba ejecutada a la hora programada abriendo el Notepad.exe.")
     subprocess.run(["notepad.exe"])
 
-def schedule_daily_quiz(time_str):
-    """Programa la función para que se ejecute a una hora específica cada día."""
-    # Parsear la hora de entrada para incluir segundos
+def print_time_remaining(target_time):
+    """Calcula y devuelve el tiempo restante hasta la hora objetivo."""
+    time_remaining = target_time - datetime.now()
+    return str(time_remaining).split('.')[0]  # Formato HH:MM:SS
+
+def schedule_quiz_once(time_str):
+    """Programa la función para que se ejecute solo una vez a la hora específica."""
     hour, minute, second = map(int, time_str.split(":"))
-    schedule_time = datetime.now().replace(
-        hour=hour, minute=minute, second=second, microsecond=0
-    )
+    schedule_time = datetime.now().replace(hour=hour, minute=minute, second=second, microsecond=0)
 
     # Si la hora programada ya pasó para hoy, se programa para mañana
     if schedule_time < datetime.now():
@@ -5213,32 +5352,69 @@ def schedule_daily_quiz(time_str):
     # Calcular el tiempo de espera en segundos hasta la próxima ejecución
     wait_time = (schedule_time - datetime.now()).total_seconds()
 
-    # Programar la tarea para ejecutarse en el tiempo específico
-    job = schedule.every().day.at(f"{hour:02}:{minute:02}").do(
-        lambda: delayed_task(wait_time)
-    )
-    
-    scheduled_tasks.append((job, time_str))
-    print(f"Quiz diario programado para las {time_str}.")
+    # Programar la tarea
+    threading.Thread(target=delayed_task, args=(wait_time, schedule_time)).start()
 
+    # Añadir la tarea a la lista con indicador de tarea única
+    scheduled_tasks.append((None, time_str, schedule_time, "Quiz único", False))
+    print(f"Tarea única programada para ejecutarse a las {time_str}.")
 
-def delayed_task(wait_time):
+def delayed_task(wait_time, target_time):
     """Ejecuta la tarea después de un tiempo específico."""
-    time.sleep(wait_time)  # Espera el tiempo calculado
-    answer_quiz_daily_contest_actinver()  # Llama a la función de la tarea
-    #mock_quiz_function()
+    time.sleep(wait_time)  # Espera el tiempo calculado    
+    answer_quiz_daily_contest_actinver() # Existe un funcion mock pos si quiere spurebas 
+
+def schedule_quiz_daily(time_str):
+    """Programa la función para que se ejecute a una hora específica cada día."""
+    try:
+        # Esto verifica que el formato sea válido
+        hour, minute, second = map(int, time_str.split(":"))
+
+        # Programar la tarea diariamente
+        job = schedule.every().day.at(time_str).do(answer_quiz_daily_contest_actinver)
+
+        # Añadir la tarea a la lista con indicador de tarea diaria
+        scheduled_tasks.append((job, time_str, None, "Quiz diario", True))
+        print(f"Quiz diario programado para las {time_str}.")
+    
+    except Exception as e:
+        print(f"Error al programar el quiz diario: {str(e)}")
+
+
+def list_scheduled_quizzes():
+    """Lista todas las tareas programadas, diferenciando entre diarias y únicas."""
+    if not scheduled_tasks:
+        print("No hay tareas programadas.")
+    else:
+        print("Tareas programadas:")
+        for job, time_str, target_time, name, is_daily in scheduled_tasks:
+            schedule_type = "Diaria" if is_daily else "Única"
+
+            if is_daily:
+                # Si es una tarea diaria, no tiene un único tiempo objetivo
+                print(f" - {name} a las {time_str} ({schedule_type}) (se ejecutará diariamente)")
+            else:
+                # Calcular el tiempo restante para las tareas únicas
+                time_remaining = print_time_remaining(target_time)
+
+                # Verificar si la tarea única ya ha sido ejecutada
+                if datetime.now() > target_time:
+                    # Si ya fue ejecutada y es única, indicar que ha finalizado
+                    print(f" - {name} a las {time_str} ({schedule_type}) (finalizada)")
+                else:
+                    print(f" - {name} a las {time_str} ({schedule_type}) (Tiempo restante: {time_remaining})")
 
 
 def run_schedule():
     """Ejecuta el programador en un hilo separado."""
     while not stop_event.is_set():
         schedule.run_pending()
-        time.sleep(1)  # Espera un segundo entre verificaciones
+        time.sleep(1)
 
 
 def start_scheduled_quiz():
-    """Solicita al usuario una hora y programa el concurso diario."""
-    # Obtener la hora actual y sumarle una hora
+    """Solicita al usuario una hora y programa el concurso según su preferencia."""
+    # Obtener la hora actual y sugerir la hora una hora adelante
     current_time = datetime.now()
     default_time = current_time + timedelta(minutes=1)
     default_time_str = default_time.strftime("%H:%M:%S")
@@ -5248,34 +5424,40 @@ def start_scheduled_quiz():
     # Establecer un valor por defecto si el usuario no introduce nada
     if not user_input.strip():
         user_input = default_time_str
-        print(
-            f"No se introdujo ninguna hora. Se establecerá el valor por defecto: {default_time_str}"
-        )
+        print(f"No se introdujo ninguna hora. Se establecerá el valor por defecto: {default_time_str}")
 
     try:
-        # Programa el quiz diario
-        schedule_daily_quiz(user_input)
+        # Preguntar si quiere ejecutar diariamente o solo una vez
+        daily_choice = input("¿Deseas ejecutar esto diariamente? (y/n): ").strip().lower()
 
-        # Inicia el programador en un hilo separado
-        thread = threading.Thread(target=run_schedule)
-        thread.start()  # Iniciar el hilo
-
-        # Mensaje de confirmación
-        print("La tarea del quiz diario ha sido programada.")
+        if daily_choice == "y":
+            # Programa el quiz diario
+            # Iniciar el scheduler en un hilo separado
+            scheduler_thread = threading.Thread(target=run_schedule)
+            scheduler_thread.start()
+            schedule_quiz_daily(user_input)
+            print("La tarea del quiz diario ha sido programada.")
+        else:
+            # Programa la ejecución solo una vez
+            schedule_quiz_once(user_input)
 
     except ValueError:
-        print(
-            "Formato de hora no válido. Por favor, introduce la hora en el formato HH:MM:SS."
-        )
+        print("Formato de hora no válido. Por favor, introduce la hora en el formato HH:MM:SS.")
 
-def list_scheduled_quizzes():
-    """Lista todas las tareas programadas."""
-    if not scheduled_tasks:
-        print("No hay tareas programadas.")
-    else:
-        print("Tareas programadas:")
-        for job, time_str in scheduled_tasks:
-            print(f"- Quiz diario a las {time_str}")
+def stop_scheduled_tasks():
+    """Detiene todas las tareas programadas y los hilos en ejecución."""
+    global stop_event
+    stop_event.set()
+    schedule.clear()
+    scheduled_tasks.clear()  # Limpiar la lista de tareas programadas
+    print("Todas las tareas programadas han sido detenidas.")
+
+def exit_program():
+    """Detiene todas las tareas programadas y sale del programa."""
+    stop_scheduled_tasks()  # Detiene los hilos y tareas programadas
+    console.print("[bold red]Saliendo...[/bold red]")
+    exit(0)  # Sale del programa con un código de éxito
+    
 
 def option_1():
     print("Función provisional para la opción 2")
@@ -5416,7 +5598,7 @@ def display_menu(selected_index):
     clear_screen()
     # Crear la tabla del menú
     table = Table(
-        title="[bold magenta]RACTINVER Menú Principal[/bold magenta]",
+        title="[bold magenta]RACTINVER (Análisis bursatil de acciones en la B.M.V.) Menú Principal[/bold magenta]",
         show_header=False,
         header_style="bold yellow",
     )
@@ -5469,6 +5651,33 @@ def imprimir_consejos_inversion():
     - **Por comodidad en retroacciones:** En la mañana, uso para vender posiciones y al final del día para comprar nuevas acciones, ya que los demás van cerrando sus posiciones. Esto permite aprovechar el movimiento del mercado y tomar decisiones más informadas.
     """
 
+    # Agregar un tutorial sobre comisiones y el IVA en compra-venta de acciones
+    tutorial_comisiones = """
+    ### Tutorial: Funcionamiento de las Comisiones e IVA en Operaciones de Compra-Venta de Acciones
+
+    Cada vez que realizas una operación de compra o venta de acciones, debes tener en cuenta que existen comisiones y el IVA (Impuesto al Valor Agregado) que impactan el importe total de la transacción.
+
+    - **Comisión**: Este es un porcentaje que la plataforma de trading te cobra por la ejecución de la operación.
+    - **IVA**: En algunos países, se aplica un IVA sobre el monto de la comisión. Por ejemplo, en México, el IVA es del 16%.
+
+    **Ejemplo de Compra**:
+
+    Supongamos que compras 10 acciones de una emisora con un precio por acción de **$3,155.00**. 
+    - El importe total de la compra sería $31,550.00.
+    - Si la comisión es del 0.10%, la comisión sería de **$31.55**.
+    - El IVA sobre la comisión (16%) sería de **$5.05**.
+    - El costo total de la operación, sumando comisión e IVA, sería **$31,586.60**.
+
+    **Porcentaje total de costos**:
+    En este ejemplo, el costo por comisiones e IVA es aproximadamente del **0.12%** del importe total de la compra.
+
+    **¿Qué ocurre al vender?**
+    Si vendes esas mismas acciones, también se te cobrará una comisión y el IVA, lo que resultaría en un costo similar, cercano al **0.12%** del importe de venta.
+
+    **Pérdida total**:
+    En una operación completa de compra y venta, perderás alrededor de **0.24%** del valor total (0.12% en la compra y 0.12% en la venta). Por lo tanto, para que tu inversión sea rentable, debes asegurarte de que las ganancias superen este 0.24%.
+    """
+
     # Crear un título llamativo
     titulo = Text(
         "¡Consejos de Inversión y Datos Curiosos!",
@@ -5486,6 +5695,15 @@ def imprimir_consejos_inversion():
             Markdown(datos_curiosos),
             title="Datos Curiosos del Day Trading",
             border_style="yellow",
+        )
+    )
+
+    # Mostrar tutorial sobre comisiones e IVA
+    console.print(
+        Panel(
+            Markdown(tutorial_comisiones),
+            title="Funcionamiento de Comisiones e IVA en Compra-Venta",
+            border_style="blue",
         )
     )
 
@@ -5556,7 +5774,7 @@ else:
 # news_analysis()
 
     
-    
+ 
 
 
 def main():
@@ -5565,6 +5783,7 @@ def main():
     # Definición del menú dentro de main
     menu_options = [
         ("Sugerir acciones para seguimiento usando análisis por sector (Análisis fundamental)", fundamental_analysis),
+        ("Sugerir acciones para seguimiento según preferencias (Análisis de preferencias)", suggest_stocks_by_preferences),
         ("Sugerir consideraciones sobre acciones en seguimiento según noticias actuales (Análisis de sentimientos)", news_analysis),
         ("Sugerir acciones para compra-venta usando estrategia swing trading por publicación próxima de resultados (Análisis técnico)", suggest_technical_soon_results),
         ("Sugerir acciones para compra-venta usando estrategia swing trading por indicadores técnicos (Análisis técnico)", suggest_technical),
@@ -5603,7 +5822,6 @@ def main():
         if ascii_value == 224:  # Teclas especiales (flechas, etc.)
             ch = getch()  # Lee el siguiente carácter para obtener el código de la flecha
             ascii_value = ord(ch)
-            print(f"key 2 {ascii_value}")
             if ascii_value == 72:  # Flecha arriba
                 selected_index = (selected_index - 1) % len(menu_options)
             elif ascii_value == 80:  # Flecha abajo
@@ -5614,10 +5832,11 @@ def main():
             selected_option[1]()
             Prompt.ask("[bold blue]Pulsa Enter para continuar...[/bold blue]")
         elif ch == b'q':
-            console.print("[bold red]Saliendo...[/bold red]")
-            break  # Termina el programa
+            exit_program()
         elif ch == b':':
-            opcion_main_menu = Prompt.ask("[bold green] cmd [/bold green]")         
+            opcion_main_menu = Prompt.ask("[bold green] cmd [/bold green]")        
+            if opcion_main_menu == 'quit':
+                exit_program() 
             try:
                 selected_index = int(opcion_main_menu) - 1  # Ajustar el índice (restar 1)
                 if 0 <= selected_index < len(menu_options):
