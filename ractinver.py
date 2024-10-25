@@ -2254,7 +2254,7 @@ def swing_trading_strategy_machine():
         while True:
             if opcion == "y" or opcion == "Y":
                 tickers = df["Símbolo3"].astype(str).values.tolist()
-                df_allocations = portfolio_optimization2(tickers, 1000000)
+                df_allocations = markovitz_portfolio_optimization(tickers, 1000000)
                 df_result = pd.merge(
                     df_allocations, df, left_on="Ticker", right_on="Símbolo3"
                 )
@@ -2616,7 +2616,102 @@ def display_ef_with_selected(mean_returns, cov_matrix, risk_free_rate, stocks_da
     ax.legend(labelspacing=0.8)
 
 
-def portfolio_optimization2(tickers, total_mount, initial_date, max_percentaje=30):
+
+# Función para calcular la Razón de Sharpe ajustada para corto plazo
+def calculate_sharpe_ratio(returns, risk_free_rate=0.01):
+    # Calcular el promedio de retornos y la volatilidad
+    mean_return = returns.mean()
+    std_dev = returns.std()
+    # Si la volatilidad es 0, evitamos dividir por cero
+    if std_dev == 0:
+        return 0
+    sharpe_ratio = (mean_return - risk_free_rate) / std_dev
+    return sharpe_ratio
+
+# Función principal para la optimización de portafolio en corto plazo
+def portfolio_optimization_sharpe_short_term(tickers, total_mount, initial_date, max_percentaje=45, short_term_days=7):
+    stocks_data = pd.DataFrame()
+    last_prices = {}
+    inicio = initial_date
+    fin = datetime.today().strftime("%Y-%m-%d")
+    short_term_window = short_term_days  # Ventana de tiempo corta (en días)
+
+    for ticker in tickers:
+        try:
+            # Descargar datos de los últimos días para obtener un análisis de corto plazo
+            ticker_data = yf.download(ticker + ".MX", start=inicio, end=fin, interval='1d')
+            
+            if not ticker_data.empty:
+                # Guardar precios ajustados
+                stocks_data[ticker] = ticker_data["Adj Close"]
+                last_prices[ticker] = stocks_data[ticker].iloc[-1]
+            else:
+                raise Exception(f"No hay datos disponibles para el ticker {ticker}")
+        
+        except Exception as e:
+            print(f"Error al obtener datos para el ticker {ticker}: {e}")
+
+    allocation_dataframe = pd.DataFrame()
+
+    try:
+        # Obtener los retornos logarítmicos diarios
+        returns = stocks_data.pct_change().dropna()
+
+        # Calcular razón de Sharpe ajustada para corto plazo
+        short_term_returns = returns.tail(short_term_window)  # Últimos 'n' días
+        sharpe_ratios = short_term_returns.apply(calculate_sharpe_ratio)
+        
+        # Normalizar las razones de Sharpe para que sumen 1 (esto representará la asignación de pesos)
+        sharpe_weights = sharpe_ratios / sharpe_ratios.sum()
+
+        allocation_dataframe = pd.DataFrame({
+            "Ticker": sharpe_weights.index,
+            "Allocation %": sharpe_weights.values
+        })
+
+    except Exception as e:
+        print(e)
+        print("Algo salió mal, distribuyendo de manera uniforme...")
+        allocation_dataframe = pd.DataFrame(stocks_data.columns, columns=["Ticker"])
+        tickers_count = len(allocation_dataframe.index)
+        if tickers_count > 0:
+            allocation_dataframe["Allocation %"] = 1 / tickers_count
+        else:
+            print("No hay datos válidos disponibles para distribuir.")
+
+    # Convertir porcentaje de asignación a escala 100%
+    allocation_dataframe["Allocation %"] = allocation_dataframe["Allocation %"] * 100
+    # Ajustar para que ningún ticker tenga más del porcentaje máximo
+    allocation_dataframe["Allocation %"] = (
+        allocation_dataframe["Allocation %"].apply(
+            lambda x: max_percentaje if x > max_percentaje else x
+        )
+    ).round(2)
+
+    # Calcular la cantidad asignada en $ a cada ticker
+    allocation_dataframe["Allocation $"] = (
+        allocation_dataframe["Allocation %"] * float(total_mount) / 100
+    ).round(2)
+
+    # Añadir los precios de cierre recientes
+    allocation_dataframe["LastPrice $"] = (
+        allocation_dataframe["Ticker"].map(last_prices)
+    ).round(2)
+
+    # Calcular el número de títulos a comprar
+    allocation_dataframe["TitlesNum"] = (
+        allocation_dataframe["Allocation $"] / allocation_dataframe["LastPrice $"]
+    ).fillna(0).astype(int)
+
+    # Formatear los montos de dinero con comas
+    allocation_dataframe["Allocation $"] = allocation_dataframe.apply(
+        lambda x: "{:,}".format(x["Allocation $"]), axis=1
+    )
+
+    return allocation_dataframe
+
+
+def markovitz_portfolio_optimization(tickers, total_mount, initial_date, max_percentaje=45):
     stocks_data = pd.DataFrame()
     inicio = initial_date
     fin = datetime.today().strftime("%Y-%m-%d")
@@ -2661,7 +2756,6 @@ def portfolio_optimization2(tickers, total_mount, initial_date, max_percentaje=3
             print("No valid data available to distribute.")
 
     allocation_dataframe["Allocation %"] = allocation_dataframe["Allocation %"] * 100
-    # Cambiar el límite de 45 a 30
     allocation_dataframe["Allocation %"] = (
         allocation_dataframe["Allocation %"].apply(
             lambda x: max_percentaje if x > max_percentaje else x
@@ -4058,7 +4152,7 @@ def swing_trading_recommendations():
         print(len(tickers))
         if len(tickers) >= 1:
             # tb.send_message(chat_id, "Ejecutando algoritmo de optimización de portafolio...")
-            df_allocations = portfolio_optimization2(tickers, 1000000)
+            df_allocations = markovitz_portfolio_optimization(tickers, 1000000)
             df_result = pd.merge(
                 df_allocations, df, left_on="Ticker", right_on="Símbolo"
             )
@@ -4848,7 +4942,7 @@ def suggest_technical_etf_leveraged(
 
     # Crear un DataFrame a partir de los resultados
     df_resultados = pd.DataFrame(resultados)
-    os.makedirs('data', exist_ok=True)    
+    os.makedirs('data', exist_ok=True)
     csv_file_path = f'data/suggest_technical_etf_leveraged_{datetime.now():%Y%m%d_%H%M%S}.csv'
     df_resultados.to_csv(csv_file_path, index=False)
     # Imprimir la tabla de resultados
@@ -5031,7 +5125,48 @@ def set_optimizar_portafolio():
     print("\nTickers list : ", tickers)
     print("\nOptimizing portfolio...")
     try:
-        allocation_dataframe = portfolio_optimization2(
+        allocation_dataframe = markovitz_portfolio_optimization(
+            tickers, input_amount, input_initial_date
+        )
+        print(allocation_dataframe)
+    except Exception as e:
+        print(e)
+
+def set_optimizar_portafolio2():
+    input_amount = (
+        input("Enter the amount to invest (i.e. 800000): ")
+        .replace(",", "")
+        .replace("$", "")
+        .strip()
+    )
+    if not input_amount:  # Si el usuario no ingresa nada
+        input_amount = 800000  # Valor por defecto
+    else:
+        input_amount = int(float(input_amount))  # Convertir a número
+    input_tickers = str(
+        input("Enter tickers separated by commas (i.e. OMAB,AAPL,META,MSFT): ")
+    )
+    if not input_tickers:  # Si el usuario no ingresa nada
+        console.print(
+            f"\n[bold yellow] No se detectó entrada, usando valores sugeridos por defecto...[/bold yellow]"
+        )
+        input_tickers = "OMAB,AAPL,META,MSFT"  # Valor por defecto
+    input_initial_date = str(
+        input("Enter initial date of historial prices data (i.e. 2018-01-01): ")
+    )
+    if not input_initial_date:  # Si el usuario no ingresa nada
+        input_initial_date = "2018-01-01"  # Valor por defecto
+    input_tickers = input_tickers.replace(" ", "")
+    input_tickers = input_tickers.replace(".MX", "")
+    input_tickers = input_tickers.upper()
+    input_tickers_list = input_tickers.split(",")
+    tickers = []
+    for i in input_tickers_list:
+        tickers.append(i)
+    print("\nTickers list : ", tickers)
+    print("\nOptimizing portfolio by momentuu...")
+    try:
+        allocation_dataframe = portfolio_optimization_sharpe_short_term(
             tickers, input_amount, input_initial_date
         )
         print(allocation_dataframe)
@@ -5137,10 +5272,12 @@ def establish_session(
 # Recupera la sesión guardada
 def recover_session():
     print("Actualización datos de sesión de usuario en SessionInfo.json")
+    
+    # Cargar información de la sesión desde el archivo JSON
     with open("data/SessionInfo.json") as file:
         session_info = json.load(file)
         
-    print("Sessión info actual session_info")
+    print("Sessión info actual session_info:")
     print(session_info)
 
     headers = {
@@ -5154,20 +5291,40 @@ def recover_session():
         "tokensesion": session_info["tokenSession"],
     }
 
-    recovery_response = session.post(
-        f'https://www.retoactinver.com/reto/app/usuarios/session/recoveryTokenSession?user={session_info["cxCveUsuario"]}&tokenApp={session_info["tokenApp"]}',
-        cookies=cookies,
-        headers=headers,
-    )
+    # Reintentar hasta un máximo de 3 veces con un tiempo de espera entre reintentos
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            recovery_response = session.post(
+                f'https://www.retoactinver.com/reto/app/usuarios/session/recoveryTokenSession?user={session_info["cxCveUsuario"]}&tokenApp={session_info["tokenApp"]}',
+                cookies=cookies,
+                headers=headers,
+                timeout=10  # Limitar el tiempo de espera de la conexión
+            )
 
-    print(recovery_response.text)
-    session_info["tokenSession"] = recovery_response.json()["cxValue"]  
-    
-    print("Sessión info nueva session_info") 
-         
+            # Verificar si la respuesta fue exitosa (código de estado 200)
+            recovery_response.raise_for_status()
+            
+            # Procesar la respuesta
+            print(recovery_response.text)
+            session_info["tokenSession"] = recovery_response.json()["cxValue"]
+            
+            print("Sessión info nueva session_info")
+            
+            # Guardar la nueva información de la sesión en el archivo
+            with open("data/SessionInfo.json", "w") as file:
+                json.dump(session_info, file)
+            
+            break  # Salir del ciclo si se logró completar la solicitud con éxito
 
-    with open("data/SessionInfo.json", "w") as file:
-        json.dump(session_info, file)
+        except requests.exceptions.RequestException as e:
+            print(f"Error al recuperar la sesión (intento {attempt + 1} de {max_retries}): {e}")
+            
+            if attempt < max_retries - 1:
+                print("Reintentando...")
+                time.sleep(5)  # Esperar 5 segundos antes de reintentar
+            else:
+                print("Se alcanzó el número máximo de intentos. No se pudo recuperar la sesión.")
 
 
 # Cierra la sesión
@@ -5198,11 +5355,10 @@ def delete_file_if_exists(file_path):
         os.remove(file_path)  # Delete the file
         print(f"The file '{file_path}' has been deleted.")
     else:
-        print(f"The file '{file_path}' does not exist.")
+        print(f"The file '{file_path}' does not exist do not need delete it.")
 
-# Obtiene el cuestionario diario
-def get_daily_quizz():
-    print("Trying get dayly quizz")
+def get_weekly_quizz():
+    print("Trying get weekly quizz")
     with open("data/SessionInfo.json") as file:
         session_info = json.load(file)
 
@@ -5217,19 +5373,100 @@ def get_daily_quizz():
     }
 
     response = requests.get(
-        f'https://www.retoactinver.com/reto/app/quiz/consultaContestoQuizz?cveUsuario=osvaldo.hdz.m@outlook.com&cx_token_app={session_info["tokenApp"]}&cx_tokenSesionApl={session_info["tokenSession"]}',
+        f'https://www.retoactinver.com/reto/app/quiz/consultaQuizSemanal?cveUsuario={session_info["cxCveUsuario"]}&cx_token_app={session_info["tokenApp"]}&cx_tokenSesionApl={session_info["tokenSession"]}',
         cookies=cookies,
         headers=headers,
     )
-
-    quiz_data = response.json()
     
-    mensaje = quiz_data['collection'][0]['Pregunta'].get('Mensaje')    
+    # Procesar la respuesta JSON
+    data = response.json()
+    
+    print(data)
+    
+    # Crear el cuestionario con las respuestas seleccionadas (por ahora, la primera respuesta)
+    cuestionario_respuestas = []
+    for pregunta in data['collection']['cuestionario']:
+        # Elegimos la primera respuesta para cada pregunta como placeholder
+        primera_respuesta = pregunta['respustas'][0]['id']
+        cuestionario_respuestas.append({"id": pregunta['id'], "respuestaCorrecta": primera_respuesta})
+    
+    # Construir el prompt para enviar a la IA (Gemini)
+    prompt = "Please provide the correct answer IDs for the following questions, separated by commas. Only return the answer IDs.\n\n"
+    for pregunta in data['collection']['cuestionario']:
+        prompt += f"Question: {pregunta['pregunta']}\n"
+        for respuesta in pregunta['respustas']:
+            prompt += f"- Option {respuesta['id']}: {respuesta['respuesta']}\n"
+        prompt += "\n"
+    
+    numero_preguntas = len(data['collection']['cuestionario'])
+    
+    # Mostrar el prompt generado (para depuración)
+    print(prompt)
+    
+    # Enviar el prompt a la IA (usando la API de Gemini)
+    gemini_response = requests.post(
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=AIzaSyADfixgVHPBXyY60ivLUYo3rCJTQtZ_M7g',
+        headers={'Content-Type': 'application/json'},
+        data=json.dumps({
+            "contents": [{"parts": [{"text": prompt}]}]
+        })
+    )
+    
+    # Procesar la respuesta de la IA
+    gemini_data = gemini_response.json()
+    
+    print(gemini_data)
+    
+    respuestas_ai = gemini_data['candidates'][0]['content']['parts'][0]['text'].strip()
+
+    # Convertir las respuestas en una lista
+    lista_respuestas_ai = respuestas_ai.split(',')
+    
+    # Verificar si el número de respuestas coincide con el número de preguntas
+    if len(lista_respuestas_ai) == numero_preguntas:
+        print(f"Las respuestas coinciden con el número de preguntas: {lista_respuestas_ai}")
+    else:
+        print(f"No coinciden la cantidad de respuestas ({len(lista_respuestas_ai)}) con las preguntas ({numero_preguntas})")
+    
+    for i, respuesta in enumerate(lista_respuestas_ai):
+        cuestionario_respuestas[i]['respuestaCorrecta'] = respuesta
+    
+    return cuestionario_respuestas
+
+
+def get_daily_quizz():
+    print("Intento obtener el quizz diario...")
+    with open("data/SessionInfo.json") as file:
+        session_info = json.load(file)
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.5249.62 Safari/537.36",
+    }
+
+    cookies = {
+        "tokenapp": session_info["tokenApp"],
+        "TS016e21d6": session_info["TS016e21d6"],
+        "tokensesion": session_info["tokenSession"],
+    }
+
+    response = requests.get(
+        f'https://www.retoactinver.com/reto/app/quiz/consultaContestoQuizz?cveUsuario={session_info["cxCveUsuario"]}&cx_token_app={session_info["tokenApp"]}&cx_tokenSesionApl={session_info["tokenSession"]}',
+        cookies=cookies,
+        headers=headers,
+    )
+    
+    quiz_data = response.json()
+        
+    mensaje = quiz_data['collection'][0]['Pregunta'].get('Mensaje')  
+    pregunta = ''  
     if mensaje:
+        print("Pregunta:")
+        pregunta = quiz_data['collection'][0]['Pregunta']["Pregunta"]
+        print(pregunta)
         if "Pregunta contestada" in mensaje:
-            print("Pregunta ya contestada previamente")
+            print("Pregunta ya contestada previamente, borrando quizz aprevio si existe")
             delete_file_if_exists("SessionQuizData.json")
-            return
+            return pregunta
     else:
         try:
             # Intentamos obtener la pregunta
@@ -5242,14 +5479,14 @@ def get_daily_quizz():
             # Guardar los datos en un archivo
             with open("data/SessionQuizData.json", "w") as file:
                 json.dump(quiz_data, file)
-        
+            
+            return pregunta        
         except KeyError as e:
             # Manejo de excepción si la clave "Pregunta" no existe
             print(f"Error: {str(e)} - Es posible que la pregunta aún no se haya publicado o haya sido respondida anteriormente.")
 
-
 # Envía la respuesta del cuestionario
-def send_quizz_answer():
+def send_quizz_week_answer(cuestionario_respuestas):
     # Check if the file exists
     if not os.path.exists("data/SessionQuizData.json"):
         return
@@ -5258,17 +5495,116 @@ def send_quizz_answer():
     with open("data/SessionQuizData.json") as tmp_file:
         quiz_data = json.load(tmp_file)
         
-    print(quiz_data["collection"][0]["Pregunta"]["respuestas"])
+    # Load session information from JSON file
+    with open("data/SessionInfo.json") as session_file:
+        session_info = json.load(session_file)
+
+    # Define cookies for the request
+    cookies = {
+        "tokenapp": session_info["tokenApp"],
+        "TS016e21d6": session_info["TS016e21d6"],
+        "tokensesion": session_info["tokenSession"],
+        "cxCveUsuario": session_info["cxCveUsuario"],
+    }
     
-    # Extract the first response ID from the JSON and select a random ID in the range
+    print(cuestionario_respuestas)
+    
+    url = 'https://www.retoactinver.com/reto/app/quiz/contestaQuizSemanal'
+    
+    params = {
+    'cveUsuario': session_info["cxCveUsuario"],
+    'cx_tokenSesionApl': session_info["tokenSession"],
+    'cx_token_app': session_info["tokenApp"]
+    }
+    
+    data = {
+    'cuestionario': cuestionario_respuestas
+    }
+    
+    headers = {
+    'Content-Type': 'application/json',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.6668.71 Safari/537.36',
+    'Accept': 'application/json',
+    'Referer': 'https://www.retoactinver.com/minisitio/reto/evaluacion/semanal/',
+    'Origin': 'https://www.retoactinver.com',
+    'Sec-Fetch-Site': 'same-origin',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Dest': 'empty',
+    'Connection': 'keep-alive',}
+
+    
+    response = requests.put(url, params=params, headers=headers, data=json.dumps(data))
+    
+    # Print the response status
+    print(f"Response Status Code: {response.status_code}")
+    print(response.text)
+    if response.ok:
+        print("Answer submitted successfully!")
+    else:
+        print("Failed to submit the answer.")
+
+
+def anwser_daily_quizz_random_method(first_response_id):
+    print("Answering by random method")
+     # Extract the first response ID from the JSON and select a random ID in the range    
+    
+    random.seed(time.time_ns())
+    random_id = random.randint(first_response_id, first_response_id + 2)
+    return random_id
+
+def anwser_daily_quizz_ia_gemini_method(pregunta, answer_options):
+    print("Answering by random gemini method ia")
+    
+    # Construir el prompt para enviar a la IA (Gemini)
+    prompt = f"Please provide the correct answer ID for the following question. Only return the answer IDs.\n\n{pregunta}. Options: {answer_options}"
+    
+    # Mostrar el prompt generado (para depuración)
+    print(prompt)
+    
+    # Enviar el prompt a la IA (usando la API de Gemini)
+    gemini_response = requests.post(
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=AIzaSyADfixgVHPBXyY60ivLUYo3rCJTQtZ_M7g',
+        headers={'Content-Type': 'application/json'},
+        data=json.dumps({
+            "contents": [{"parts": [{"text": prompt}]}]
+        })
+    )
+    
+    # Procesar la respuesta de la IA
+    gemini_data = gemini_response.json()
+    
+    respuestas_ai = gemini_data['candidates'][0]['content']['parts'][0]['text'].strip()
+
+    # Convertir las respuestas en una lista
+    lista_respuestas_ai = respuestas_ai.split(',')
+    
+    print(lista_respuestas_ai)
+    
+    return int(lista_respuestas_ai[0]) if lista_respuestas_ai[0].isdigit() else None
+
+# Envía la respuesta del cuestionario
+def send_quizz_answer(pregunta):
+    # Check if the file exists
+    if not os.path.exists("data/SessionQuizData.json"):
+        print("Pregunta respondida anteriomente por lo que no existe data/SessionQuizData.json")
+        return
+        
+    # Load session information from temporary JSON file
+    with open("data/SessionQuizData.json") as tmp_file:
+        quiz_data = json.load(tmp_file)
+        
+    print(f"La pregunta es: {pregunta}")
+    answer_options = quiz_data['collection'][0]['Pregunta']['respuestas']
+    print(f"Las opciones son: {answer_options}")
+    
     first_response_id = quiz_data["collection"][0]["Pregunta"]["respuestas"][0][
         "idRespuesta"
     ]
     
-    random.seed(time.time_ns())
-    random_id = random.randint(first_response_id, first_response_id + 2)
+    #answer_id = anwser_daily_quizz_random_method(first_response_id)
+    answer_id = anwser_daily_quizz_ia_gemini_method(pregunta, answer_options)
 
-    print(f"\n\nAnswering with idRespuesta: {random_id}")
+    print(f"\n\nAnswering with idRespuesta: {answer_id}")
 
     # Define the request headers
     headers = {
@@ -5298,7 +5634,7 @@ def send_quizz_answer():
     }
 
     # Construct the URL with the random idRespuesta
-    url = f'https://www.retoactinver.com/reto/app/quiz/contestarQuiz?cveUsuario={session_info["cxCveUsuario"]}&idRespuesta={random_id}&cx_tokenSesionApl={session_info["tokenSession"]}&cx_token_app={session_info["tokenApp"]}&tokenApp={session_info["tokenApp"]}&tokenSession={session_info["tokenSession"]}'
+    url = f'https://www.retoactinver.com/reto/app/quiz/contestarQuiz?cveUsuario={session_info["cxCveUsuario"]}&idRespuesta={answer_id}&cx_tokenSesionApl={session_info["tokenSession"]}&cx_token_app={session_info["tokenApp"]}&tokenApp={session_info["tokenApp"]}&tokenSession={session_info["tokenSession"]}'
 
     # Send the POST request
     response = requests.post(url, headers=headers, cookies=cookies)
@@ -5311,25 +5647,52 @@ def send_quizz_answer():
     else:
         print("Failed to submit the answer.")
 
+def answer_quiz_weekly_contest_actinver():
+    clear_screen()
+    
+    usuarios = [
+        {"usuario": "caritostuart16@hotmail.com", "password": "Montse1695-"}
+    ]
+    
+    delete_file_if_exists('data/SessionInfo.json')
+    delete_file_if_exists('data/SessionInfoTmp01.json')
+    delete_file_if_exists('data/SessionInfoTmp02.json')
+    delete_file_if_exists('data/SessionInfo.json')
+       
+    for _ in range(3):
+        for login_data in usuarios:
+            establish_session(login_data=login_data)
+            recover_session()
+            cuestionario_respuestas = get_weekly_quizz()
+            recover_session()
+            send_quizz_week_answer(cuestionario_respuestas)
+            close_session()
+            time.sleep(3)
+
+    Prompt.ask("[bold blue]Pulsa Enter para continuar...[/bold blue]")
+    main()
+
 
 def answer_quiz_daily_contest_actinver():
     clear_screen()
-    # Osva
-    establish_session(login_data={"usuario": "osvaldo.hdz.m@outlook.com", "password": "299792458.Light"})
-    recover_session()
-    get_daily_quizz()
-    recover_session()
-    send_quizz_answer()
-    close_session()
-    # Montse
-    establish_session(login_data={"usuario": "caritostuart16@hotmail.com", "password": "Montse1695-"})
-    recover_session()
-    get_daily_quizz()
-    send_quizz_answer()
-    close_session()
-    Prompt.ask("[bold blue]Pulsa Enter para continuar...[/bold blue]")
-    display_menu(0)
+    
+    usuarios = [
+        {"usuario": "caritostuart16@hotmail.com", "password": "Montse1695-"},
+        {"usuario": "osvaldo.hdz.m@outlook.com", "password": "299792458.Light"}
+        
+    ]
+        
+    for _ in range(3):
+        for login_data in usuarios:
+            establish_session(login_data=login_data)
+            recover_session()
+            pregunta = get_daily_quizz()
+            send_quizz_answer(pregunta)
+            close_session()
+            time.sleep(3)
 
+    Prompt.ask("[bold blue]Pulsa Enter para continuar...[/bold blue]")
+    main()
 
 def mock_quiz_function():
     print("Función de prueba ejecutada a la hora programada abriendo el Notepad.exe.")
@@ -5340,7 +5703,7 @@ def print_time_remaining(target_time):
     time_remaining = target_time - datetime.now()
     return str(time_remaining).split('.')[0]  # Formato HH:MM:SS
 
-def schedule_quiz_once(time_str):
+def schedule_daily_quiz_once(time_str):
     """Programa la función para que se ejecute solo una vez a la hora específica."""
     hour, minute, second = map(int, time_str.split(":"))
     schedule_time = datetime.now().replace(hour=hour, minute=minute, second=second, microsecond=0)
@@ -5353,13 +5716,13 @@ def schedule_quiz_once(time_str):
     wait_time = (schedule_time - datetime.now()).total_seconds()
 
     # Programar la tarea
-    threading.Thread(target=delayed_task, args=(wait_time, schedule_time)).start()
+    threading.Thread(target=delayed_daily_quizz_task, args=(wait_time, schedule_time)).start()
 
     # Añadir la tarea a la lista con indicador de tarea única
-    scheduled_tasks.append((None, time_str, schedule_time, "Quiz único", False))
+    scheduled_tasks.append((None, time_str, schedule_time, "Quiz diario una vez", False))
     print(f"Tarea única programada para ejecutarse a las {time_str}.")
 
-def delayed_task(wait_time, target_time):
+def delayed_daily_quizz_task(wait_time, target_time):
     """Ejecuta la tarea después de un tiempo específico."""
     time.sleep(wait_time)  # Espera el tiempo calculado    
     answer_quiz_daily_contest_actinver() # Existe un funcion mock pos si quiere spurebas 
@@ -5379,9 +5742,49 @@ def schedule_quiz_daily(time_str):
     
     except Exception as e:
         print(f"Error al programar el quiz diario: {str(e)}")
+        
 
+def schedule_quiz_weekly_once(time_str):
+    """Programa la función para que se ejecute solo una vez a la hora específica."""
+    hour, minute, second = map(int, time_str.split(":"))
+    schedule_time = datetime.now().replace(hour=hour, minute=minute, second=second, microsecond=0)
 
-def list_scheduled_quizzes():
+    # Si la hora programada ya pasó para hoy, se programa para mañana
+    if schedule_time < datetime.now():
+        schedule_time += timedelta(days=1)
+
+    # Calcular el tiempo de espera en segundos hasta la próxima ejecución
+    wait_time = (schedule_time - datetime.now()).total_seconds()
+
+    # Programar la tarea
+    threading.Thread(target=delayed_weekly_quizz_task, args=(wait_time, schedule_time)).start()
+
+    # Añadir la tarea a la lista con indicador de tarea única
+    scheduled_tasks.append((None, time_str, schedule_time, "Quiz semanal una vez", False))
+    print(f"Tarea única programada para ejecutarse a las {time_str}.")
+
+def delayed_weekly_quizz_task(wait_time, target_time):
+    """Ejecuta la tarea después de un tiempo específico."""
+    time.sleep(wait_time)  # Espera el tiempo calculado    
+    answer_quiz_weekly_contest_actinver() # Existe un funcion mock pos si quiere spurebas 
+
+def schedule_quiz_weekly_daily(time_str):
+    """Programa la función para que se ejecute a una hora específica cada día."""
+    try:
+        # Esto verifica que el formato sea válido
+        hour, minute, second = map(int, time_str.split(":"))
+
+        # Programar la tarea diariamente
+        job = schedule.every().day.at(time_str).do(answer_quiz_weekly_contest_actinver)
+
+        # Añadir la tarea a la lista con indicador de tarea diaria
+        scheduled_tasks.append((job, time_str, None, "Quiz semanal", True))
+        print(f"Quiz semanal programado para las {time_str}.")
+    
+    except Exception as e:
+        print(f"Error al programar el quiz semanal: {str(e)}")
+
+def list_tasks_scheduled():
     """Lista todas las tareas programadas, diferenciando entre diarias y únicas."""
     if not scheduled_tasks:
         print("No hay tareas programadas.")
@@ -5404,13 +5807,45 @@ def list_scheduled_quizzes():
                 else:
                     print(f" - {name} a las {time_str} ({schedule_type}) (Tiempo restante: {time_remaining})")
 
-
 def run_schedule():
     """Ejecuta el programador en un hilo separado."""
     while not stop_event.is_set():
         schedule.run_pending()
         time.sleep(1)
 
+
+
+def start_scheduled_weekly_quiz():
+    """Solicita al usuario una hora y programa el concurso según su preferencia."""
+    # Obtener la hora actual y sugerir la hora una hora adelante
+    current_time = datetime.now()
+    default_time = current_time + timedelta(minutes=1)
+    default_time_str = default_time.strftime("%H:%M:%S")
+
+    user_input = input(f"Introduce la hora en formato 24 horas (i.e. {default_time_str}): ")
+
+    # Establecer un valor por defecto si el usuario no introduce nada
+    if not user_input.strip():
+        user_input = default_time_str
+        print(f"No se introdujo ninguna hora. Se establecerá el valor por defecto: {default_time_str}")
+
+    try:
+        # Preguntar si quiere ejecutar diariamente o solo una vez
+        daily_choice = input("¿Deseas ejecutar esto diariamente? (y/n): ").strip().lower()
+
+        if daily_choice == "y":
+            # Programa el quiz diario
+            # Iniciar el scheduler en un hilo separado
+            scheduler_thread = threading.Thread(target=run_schedule)
+            scheduler_thread.start()
+            schedule_quiz_weekly_daily(user_input)
+            print("La tarea del quiz semanal ha sido programada.")
+        else:
+            # Programa la ejecución solo una vez
+            schedule_quiz_weekly_once(user_input)
+
+    except ValueError:
+        print("Formato de hora no válido. Por favor, introduce la hora en el formato HH:MM:SS.")
 
 def start_scheduled_quiz():
     """Solicita al usuario una hora y programa el concurso según su preferencia."""
@@ -5439,7 +5874,7 @@ def start_scheduled_quiz():
             print("La tarea del quiz diario ha sido programada.")
         else:
             # Programa la ejecución solo una vez
-            schedule_quiz_once(user_input)
+            schedule_daily_quiz_once(user_input)
 
     except ValueError:
         print("Formato de hora no válido. Por favor, introduce la hora en el formato HH:MM:SS.")
@@ -5512,14 +5947,16 @@ def utilidades_actinver_2024():
             "2": "Obtener pregunta de Quizz diario",
             "3": "Resolver Quizz diario",
             "4": "Programar respuesta automática de Quizz diario",
-            "5": "Mostrar sugerencias de compra",
-            "6": "Mostrar portafolio actual",
-            "7": "Comprar acciones",
-            "8": "Mostrar órdenes",
-            "9": "Monitorear venta",
-            "10": "Vender todas las posiciones en portafolio (a precio del mercado)",
-            "11": "Restaurar sesión en plataforma del reto",
-             "12": "Listar tareas programadas",
+            "5": "Resolver Quizz semanal",
+            "6": "Programar respuesta automática de Quizz semanal",
+            "7": "Mostrar sugerencias de compra",
+            "8": "Mostrar portafolio actual",
+            "9": "Comprar acciones",
+            "10": "Mostrar órdenes",
+            "11": "Monitorear venta",
+            "12": "Vender todas las posiciones en portafolio (a precio del mercado)",
+            "13": "Restaurar sesión en plataforma del reto",
+            "14": "Listar tareas programadas",
             "0": "Regresar",
         }
 
@@ -5540,14 +5977,16 @@ def utilidades_actinver_2024():
                     "2": option_2,
                     "3": answer_quiz_daily_contest_actinver,
                     "4": start_scheduled_quiz,
-                    "5": option_5,
-                    "6": option_6,
-                    "7": option_7,
-                    "8": option_8,
-                    "9": option_9,
-                    "10": option_10,
-                    "11": option_11,
-                    "12": list_scheduled_quizzes,
+                    "5": answer_quiz_weekly_contest_actinver,
+                    "6": start_scheduled_weekly_quiz,
+                    "7": option_5,
+                    "8": option_6,
+                    "9": option_7,
+                    "10": option_8,
+                    "11": option_9,
+                    "12": option_10,
+                    "13": option_11,
+                    "14": list_tasks_scheduled,
                 }
                 option_functions[opcion_main_menu]()
                 Prompt.ask("[bold blue]Pulsa Enter para continuar...[/bold blue]")
@@ -5594,58 +6033,29 @@ def clear_screen():
     os.system("cls" if os.name == "nt" else "clear")
 
 
-def display_menu(selected_index):
-    clear_screen()
-    # Crear la tabla del menú
-    table = Table(
-        title="[bold magenta]RACTINVER (Análisis bursatil de acciones en la B.M.V.) Menú Principal[/bold magenta]",
-        show_header=False,
-        header_style="bold yellow",
-    )
-
-    # Mostrar las opciones con un indicador en la opción seleccionada
-    for index, key in enumerate(options_list):
-        option = menu_options[key]
-        if index == selected_index:
-            table.add_row(f"-> {key}. {option}", style="bold yellow")  # Opción seleccionada
-        else:
-            table.add_row(f"   {key}. {option}")  # Opción no seleccionada
-
-    # Mostrar la tabla
-    console.print(table)
-    
-    console.print("[bold blue] Presiona dos puntos : para ingresar opciones directamente.\n[/bold blue]")
-
-
-
 def imprimir_consejos_inversion():
     clear_screen()
     console = Console()
 
     # Consejos de inversión
     consejos = """
-    # Reglas de Inversión
-
     **Primera:** Tener al menos 5 acciones diferentes en el portafolio.
     **Segunda:** No comprar más del 50% del portafolio en una sola emisora.
     **Tercera:** Siempre establecer un límite de pérdida es fundamental en el day trading. Esto se logra mediante el uso de un stop loss, que se coloca en un porcentaje específico por debajo del precio de entrada. Un rango habitual es entre el **1% y el 3%**. Por ejemplo, si compras una acción a **$100**, un stop loss del **2%** se colocaría a **$98**.
 
-    > **Recuerda:** El horario de recepción de órdenes contempla todo el día, pero la ejecución de las órdenes sigue el horario habitual de la BMV (07:30 a 14:00 hrs, Ciudad de México).
+    **Recuerda:** El horario de recepción de órdenes contempla todo el día, pero la ejecución de las órdenes sigue el horario habitual de la BMV (07:30 a 14:00 hrs, Ciudad de México).
     """
 
     # Datos curiosos sobre el day trading
     datos_curiosos = """
-    ## Datos Curiosos sobre el Day Trading
-
-    - **La mayoría de los day traders pierden dinero:** La presión psicológica y la volatilidad del mercado hacen que sea un desafío.
+    - **Si se forma un equipo para participar en el reto, sería mejor inscribir a un miembro en cada categoría: uno como principiante, otro como intermedio y otro como avanzado.
+    - **La mayoría de los day traders pierden dinero y el reto actinver no es excepcion:** La presión psicológica y la volatilidad del mercado hacen que sea un desafío.
     - **El factor psicológico es crucial:** Miedo, codicia e impaciencia pueden llevar a decisiones impulsivas.
-    - **La disciplina es clave:** Los traders exitosos siguen un plan establecido y no se dejan llevar por emociones.
-    - **El papel de la tecnología:** Plataformas avanzadas y acceso a información en tiempo real permiten decisiones precisas.
+    - **La disciplina es clave:** Los traders exitosos siguen un plan  y estratgias establecido y no se dejan llevar por emociones.
     - **La gestión del riesgo:** Establecer límites de pérdida es esencial para proteger el capital.
     - **El impacto de las noticias:** Las noticias económicas y políticas pueden generar oportunidades, pero es clave filtrar la información relevante.
-    - **La educación continua:** Los day traders deben estar actualizados con las últimas tendencias del mercado.
-
-    ### Curiosidades adicionales:
+   
+    ### Curiosidades adicionales de inversiones reales:
     - **Efecto manada:** Los inversores pueden influirse entre sí, generando burbujas especulativas.
     - **Redes sociales:** Pueden ser una fuente de información, pero también de desinformación.
     - **Por comodidad en retroacciones:** En la mañana, uso para vender posiciones y al final del día para comprar nuevas acciones, ya que los demás van cerrando sus posiciones. Esto permite aprovechar el movimiento del mercado y tomar decisiones más informadas.
@@ -5653,8 +6063,6 @@ def imprimir_consejos_inversion():
 
     # Agregar un tutorial sobre comisiones y el IVA en compra-venta de acciones
     tutorial_comisiones = """
-    ### Tutorial: Funcionamiento de las Comisiones e IVA en Operaciones de Compra-Venta de Acciones
-
     Cada vez que realizas una operación de compra o venta de acciones, debes tener en cuenta que existen comisiones y el IVA (Impuesto al Valor Agregado) que impactan el importe total de la transacción.
 
     - **Comisión**: Este es un porcentaje que la plataforma de trading te cobra por la ejecución de la operación.
@@ -5688,12 +6096,12 @@ def imprimir_consejos_inversion():
     # Mostrar consejos y datos curiosos
     console.print(Panel(titulo, expand=False))
     console.print(
-        Panel(Markdown(consejos), title="Consejos de Inversión", border_style="green")
+        Panel(Markdown(consejos), title="Reglas del reto", border_style="green")
     )
     console.print(
         Panel(
             Markdown(datos_curiosos),
-            title="Datos Curiosos del Day Trading",
+            title="Consejos para el reto",
             border_style="yellow",
         )
     )
@@ -5764,7 +6172,7 @@ elif command == "optimize_portfolio":
         tickers.append(i)
     # print list as integers
     print("list (li) : ", tickers)
-    portfolio_optimization2(tickers, 10000)
+    markovitz_portfolio_optimization(tickers, 10000)
 else:
     main_menu() """
 # retrieve_top_reto()
@@ -5782,19 +6190,20 @@ def main():
 
     # Definición del menú dentro de main
     menu_options = [
-        ("Sugerir acciones para seguimiento usando análisis por sector (Análisis fundamental)", fundamental_analysis),
-        ("Sugerir acciones para seguimiento según preferencias (Análisis de preferencias)", suggest_stocks_by_preferences),
-        ("Sugerir consideraciones sobre acciones en seguimiento según noticias actuales (Análisis de sentimientos)", news_analysis),
-        ("Sugerir acciones para compra-venta usando estrategia swing trading por publicación próxima de resultados (Análisis técnico)", suggest_technical_soon_results),
-        ("Sugerir acciones para compra-venta usando estrategia swing trading por indicadores técnicos (Análisis técnico)", suggest_technical),
-        ("Sugerir ETFs para compra-venta usando estrategia swing trading por indicadores técnicos (Análisis técnico)", suggest_technical_etf),
-        ("Sugerir ETFs apalancados para compra-venta usando estrategia swing trading por indicadores técnicos (Análisis técnico)", suggest_technical_etf_leveraged),
-        ("Sugerir acciones para compra-venta usando estrategia swing trading de consensos técnicos web (Análisis técnico)", swing_trading_strategy),
-        ("Sugerir acciones para compra-venta usando estrategia swing trading con machine learning (Análisis técnico)", swing_trading_strategy_machine),
-        ("Sugerir portafolio a partir de optimización Markowitz (Análisis cuantitativo)", set_optimizar_portafolio),
-        ("Utilidades de Reto Actinver 2023", utilidades_actinver_2023),
-        ("Utilidades de Reto Actinver 2024", utilidades_actinver_2024),
-        ("Imprimir Consejos Inversión", imprimir_consejos_inversion),
+        ("Análisis técnico rápido: Sugerir ETFs apalancados para compra-venta usando estrategia swing trading por indicadores técnicos", suggest_technical_etf_leveraged),
+        ("Análisis técnico rápido: Sugerir ETFs para compra-venta usando estrategia swing trading por indicadores técnicos", suggest_technical_etf),
+        ("Análisis fundamental: Sugerir acciones para seguimiento usando análisis por sector", fundamental_analysis),
+        ("Análisis preferencias: Sugerir acciones para seguimiento según preferencias", suggest_stocks_by_preferences),
+        ("Análisis sentimientos: Sugerir consideraciones sobre acciones en seguimiento según noticias actuales", news_analysis),
+        ("Análisis técnico: Sugerir acciones para compra-venta usando estrategia swing trading por publicación próxima de resultados)", suggest_technical_soon_results),
+        ("Análisis técnico: Sugerir acciones para compra-venta usando estrategia swing trading por indicadores técnicos", suggest_technical),
+        ("Análisis técnico: Sugerir acciones para compra-venta usando estrategia swing trading de consensos técnicos web", swing_trading_strategy),
+        ("Análisis técnico: Sugerir acciones para compra-venta usando estrategia swing trading con machine learning", swing_trading_strategy_machine),
+        ("Análisis cuantitativo: Sugerir distribución de portafolio a partir de optimización de la Razón de Sharpe Ajustada para Corto Plazo", set_optimizar_portafolio2),
+        ("Análisis cuantitativo: Sugerir distribución de portafolio a partir de optimización Markowitz", set_optimizar_portafolio),
+        ("Análisis cuantitativo: Sugerir distribución de portafolio a partir de optimización Litterman", set_optimizar_portafolio),
+        ("Utilidades (Reto Actinver 2024)", utilidades_actinver_2024), 
+        ("Imprimir Consejos", imprimir_consejos_inversion),
         ("Salir", None),  # La opción de salir ya no tiene número
     ]
 
