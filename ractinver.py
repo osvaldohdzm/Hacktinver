@@ -4960,6 +4960,241 @@ def suggest_technical_etf_leveraged(
         f"[bold red]ETFs recomendadas para vender:\n[/bold red] {','.join(etf_vender)}"
     )
 
+
+
+def suggest_technical_beta1(
+    tickers=[
+         "XLK", "GDX", "AAPL", "CEMEXCPO.MX", "AXP", "AMZN", "GOOGL", "META",
+    "QQQ", "MSFT", "JPM", "BOLSAA.MX", "XLF", "TSLA", "GMEXICOB.MX", "PE&OLES.MX",
+    "WFC.MX", "BAC.MX", "SOFI.MX", "GAPB.MX", "ORBIA.MX", "AAPL.MX", "NVDA.MX", 
+    "AMD.MX", "INTC.MX", "UBER.MX", "LABB.MX", "BIMBOA.MX", "PINS.MX", "TGT.MX", 
+    "LCID.MX", "UPST.MX", "MARA.MX", "RIOT.MX", "BNGO.MX", "ALFAA.MX", "ALSEA.MX", 
+    "AMXB.MX", "BBAJIOO.MX", "GM.MX", "NKLA.MX", "ACTINVRB.MX", "TALN.MX", "FSLR.MX", 
+    "SPCE.MX", "FUBO.MX", "BYND.MX", "C.MX", "ATOS.MX"
+    ]
+):
+    # Solicitar al usuario que ingrese tickers
+    input_tickers = input(
+        "Ingresa las acciones separadas por comas (i.e. OMAB,AAPL,META,MSFT): "
+    )
+
+    if input_tickers.strip():  # Si se ingresaron tickers, usarlos
+        tickers = [ticker.strip() for ticker in input_tickers.split(",")]
+    else:
+        console.print(
+            f"\n[bold yellow] No se detectó entrada, usando valores sugeridos por defecto...[/bold yellow]"
+        )
+
+    resultados = []  # Para almacenar los resultados
+    acciones_comprar = []  # Para las acciones recomendadas para comprar
+    acciones_mantener = []  # Para las acciones recomendadas para esperar
+    acciones_vender = []  # Para las acciones recomendadas para vender
+
+    # Iterar sobre cada ticker
+    for ticker in tickers:
+        try:
+            # Descargar datos de los últimos 6 meses
+            df_ticker = yf.download(ticker, period="6mo")
+            df_ticker.dropna(inplace=True)
+
+            if df_ticker.empty:
+                print(f"Advertencia: No se encontraron datos para {ticker}.")
+                continue
+
+            # Calcular indicadores técnicos
+            rsi = RSIIndicator(df_ticker["Close"], window=14).rsi()
+            stochastic = StochasticOscillator(
+                df_ticker["High"],
+                df_ticker["Low"],
+                df_ticker["Close"],
+                window=14,
+                smooth_window=3,
+            )
+            macd = MACD(df_ticker["Close"]).macd_diff()
+            bollinger = BollingerBands(df_ticker["Close"])
+
+            # Obtener datos recientes
+            rsi_actual = rsi.iloc[-1]
+            stochastic_actual = stochastic.stoch().iloc[-1]
+            macd_actual = macd.iloc[-1]
+            close_hoy = df_ticker["Close"].iloc[-1]
+            close_ayer = df_ticker["Close"].iloc[-2]
+            close_anteayer = df_ticker["Close"].iloc[-3]
+            bollinger_high = bollinger.bollinger_hband().iloc[-1]
+            bollinger_low = bollinger.bollinger_lband().iloc[-1]
+
+            # Calcular las variaciones diarias
+            variacion_ayer = (close_ayer - close_anteayer) / close_anteayer * 100
+            variacion_hoy = (close_hoy - close_ayer) / close_ayer * 100
+
+            # Condiciones de compra: variación ayer positiva, hoy negativa + indicadores técnicos
+            condiciones_compra = (
+                variacion_ayer < 0.24 and variacion_hoy < 0
+                and rsi_actual < 58 and rsi_actual > 45 
+                and macd_actual < 3 and macd_actual > -3 
+            )
+
+            # Determinar la acción recomendada
+            if condiciones_compra:
+                accion_recomendacion = "Comprar"
+                acciones_comprar.append(ticker)
+            else:
+                accion_recomendacion = "Esperar"
+                acciones_mantener.append(ticker)
+
+            # Almacenar los resultados
+            resultados.append(
+                {
+                    "Ticker": ticker,
+                    "RSI": rsi_actual,
+                    "Stochastic": stochastic_actual,
+                    "MACD": macd_actual,
+                    "Bollinger_High": bollinger_high,
+                    "Bollinger_Low": bollinger_low,
+                    "Variación Ayer (%)": variacion_ayer,
+                    "Variación Hoy (%)": variacion_hoy,
+                    "Acción Recomendada": accion_recomendacion,
+                }
+            )
+
+        except Exception as e:
+            print(f"Error con {ticker}: {e}")
+            continue
+
+    # Crear un DataFrame a partir de los resultados
+    df_resultados = pd.DataFrame(resultados)
+    
+    os.makedirs('data', exist_ok=True)    
+    csv_file_path = f'data/suggest_technical_{datetime.now():%Y%m%d_%H%M%S}.csv'
+    df_resultados.to_csv(csv_file_path, index=False)
+
+    # Imprimir la tabla de resultados
+    print("\nResumen de Indicadores Técnicos:\n")
+    print(df_resultados)
+
+    # Mostrar recomendaciones
+    print(f"\nAcciones recomendadas para comprar:\n {','.join(acciones_comprar)}")
+    print(f"Acciones recomendadas para esperar:\n {','.join(acciones_mantener)}")
+    print(f"Acciones recomendadas para vender:\n {','.join(acciones_vender)}")
+
+
+def suggest_technical_beta2(
+    tickers=[
+         "XLK", "GDX", "AAPL", "CEMEXCPO.MX", "AXP", "AMZN", "GOOGL", "META",
+    "QQQ", "MSFT", "JPM", "BOLSAA.MX", "XLF", "TSLA", "GMEXICOB.MX", "PE&OLES.MX",
+    "WFC.MX", "BAC.MX", "SOFI.MX", "GAPB.MX", "ORBIA.MX", "AAPL.MX", "NVDA.MX", 
+    "AMD.MX", "INTC.MX", "UBER.MX", "LABB.MX", "BIMBOA.MX", "PINS.MX", "TGT.MX", 
+    "LCID.MX", "UPST.MX", "MARA.MX", "RIOT.MX", "BNGO.MX", "ALFAA.MX", "ALSEA.MX", 
+    "AMXB.MX", "BBAJIOO.MX", "GM.MX", "NKLA.MX", "ACTINVRB.MX", "TALN.MX", "FSLR.MX", 
+    "SPCE.MX", "FUBO.MX", "BYND.MX", "C.MX", "ATOS.MX"
+    ]
+):
+    # Solicitar al usuario que ingrese tickers
+    input_tickers = input(
+        "Ingresa las acciones separadas por comas (i.e. OMAB,AAPL,META,MSFT): "
+    )
+
+    if input_tickers.strip():  # Si se ingresaron tickers, usarlos
+        tickers = [ticker.strip() for ticker in input_tickers.split(",")]
+    else:
+        console.print(
+            f"\n[bold yellow] No se detectó entrada, usando valores sugeridos por defecto...[/bold yellow]"
+        )
+
+    resultados = []  # Para almacenar los resultados
+    acciones_comprar = []  # Para las acciones recomendadas para comprar
+    acciones_mantener = []  # Para las acciones recomendadas para esperar
+    acciones_vender = []  # Para las acciones recomendadas para vender
+
+    # Iterar sobre cada ticker
+    for ticker in tickers:
+        try:
+            # Descargar datos de los últimos 6 meses
+            df_ticker = yf.download(ticker, period="6mo")
+            df_ticker.dropna(inplace=True)
+
+            if df_ticker.empty:
+                print(f"Advertencia: No se encontraron datos para {ticker}.")
+                continue
+
+            # Calcular indicadores técnicos
+            rsi = RSIIndicator(df_ticker["Close"], window=14).rsi()
+            stochastic = StochasticOscillator(
+                df_ticker["High"],
+                df_ticker["Low"],
+                df_ticker["Close"],
+                window=14,
+                smooth_window=3,
+            )
+            macd = MACD(df_ticker["Close"]).macd_diff()
+            bollinger = BollingerBands(df_ticker["Close"])
+
+            # Obtener datos recientes
+            rsi_actual = rsi.iloc[-1]
+            stochastic_actual = stochastic.stoch().iloc[-1]
+            macd_actual = macd.iloc[-1]
+            close_hoy = df_ticker["Close"].iloc[-1]
+            close_ayer = df_ticker["Close"].iloc[-2]
+            close_anteayer = df_ticker["Close"].iloc[-3]
+            bollinger_high = bollinger.bollinger_hband().iloc[-1]
+            bollinger_low = bollinger.bollinger_lband().iloc[-1]
+
+            # Calcular las variaciones diarias
+            variacion_ayer = (close_ayer - close_anteayer) / close_anteayer * 100
+            variacion_hoy = (close_hoy - close_ayer) / close_ayer * 100
+
+            # Condiciones de compra: variación ayer positiva, hoy negativa + indicadores técnicos
+            condiciones_compra = (
+                variacion_ayer < 2 and variacion_hoy > 4
+                and rsi_actual < 58 and rsi_actual > 45 
+                and macd_actual < 3 and macd_actual > -3 
+            )
+
+            # Determinar la acción recomendada
+            if condiciones_compra:
+                accion_recomendacion = "Comprar"
+                acciones_comprar.append(ticker)
+            else:
+                accion_recomendacion = "Esperar"
+                acciones_mantener.append(ticker)
+
+            # Almacenar los resultados
+            resultados.append(
+                {
+                    "Ticker": ticker,
+                    "RSI": rsi_actual,
+                    "Stochastic": stochastic_actual,
+                    "MACD": macd_actual,
+                    "Bollinger_High": bollinger_high,
+                    "Bollinger_Low": bollinger_low,
+                    "Variación Ayer (%)": variacion_ayer,
+                    "Variación Hoy (%)": variacion_hoy,
+                    "Acción Recomendada": accion_recomendacion,
+                }
+            )
+
+        except Exception as e:
+            print(f"Error con {ticker}: {e}")
+            continue
+
+    # Crear un DataFrame a partir de los resultados
+    df_resultados = pd.DataFrame(resultados)
+    
+    os.makedirs('data', exist_ok=True)    
+    csv_file_path = f'data/suggest_technical_{datetime.now():%Y%m%d_%H%M%S}.csv'
+    df_resultados.to_csv(csv_file_path, index=False)
+
+    # Imprimir la tabla de resultados
+    print("\nResumen de Indicadores Técnicos:\n")
+    print(df_resultados)
+
+    # Mostrar recomendaciones
+    print(f"\nAcciones recomendadas para comprar:\n {','.join(acciones_comprar)}")
+    print(f"Acciones recomendadas para esperar:\n {','.join(acciones_mantener)}")
+    print(f"Acciones recomendadas para vender:\n {','.join(acciones_vender)}")
+
+
+
 def suggest_technical(
     tickers=[
         "XLK",
@@ -5391,7 +5626,7 @@ def get_weekly_quizz():
         cuestionario_respuestas.append({"id": pregunta['id'], "respuestaCorrecta": primera_respuesta})
     
     # Construir el prompt para enviar a la IA (Gemini)
-    prompt = "Please provide the correct answer IDs for the following questions, separated by commas. Only return the answer IDs.\n\n"
+    prompt = "Considering a context of stock market analysis of the stock market mainly but also economics. Please provide the correct answer IDs for the following questions, separated by commas. Only return the answer IDs.\n\n"
     for pregunta in data['collection']['cuestionario']:
         prompt += f"Question: {pregunta['pregunta']}\n"
         for respuesta in pregunta['respustas']:
@@ -5466,12 +5701,15 @@ def get_daily_quizz():
         if "Pregunta contestada" in mensaje:
             print("Pregunta ya contestada previamente, borrando quizz aprevio si existe")
             delete_file_if_exists("SessionQuizData.json")
+            pregunta = mensaje
             return pregunta
     else:
         try:
             # Intentamos obtener la pregunta
             pregunta = quiz_data["collection"][0]["Pregunta"]["Pregunta"]["pregunta"]
-            print(pregunta)
+            respuestas = quiz_data["collection"][0]["Pregunta"]["respuestas"]
+            full_question = pregunta + "\n\n" + "\n".join([f"{r['opcion']}. {r['respuesta']}" for r in respuestas])
+            print(full_question)
 
             # Limitar las respuestas a las primeras 3
             quiz_data["collection"][0]["Pregunta"]["respuestas"] = quiz_data["collection"][0]["Pregunta"]["respuestas"][:3]
@@ -5556,7 +5794,7 @@ def anwser_daily_quizz_ia_gemini_method(pregunta, answer_options):
     print("Answering by random gemini method ia")
     
     # Construir el prompt para enviar a la IA (Gemini)
-    prompt = f"Please provide the correct answer ID for the following question. Only return the answer IDs.\n\n{pregunta}. Options: {answer_options}"
+    prompt = f"Considering a context of stock market analysis of the stock market mainly but also economics. Please provide the correct answer ID for the following question. Only return the answer IDs.\n\n{pregunta}. Options: {answer_options}"
     
     # Mostrar el prompt generado (para depuración)
     print(prompt)
@@ -5651,7 +5889,8 @@ def answer_quiz_weekly_contest_actinver():
     clear_screen()
     
     usuarios = [
-        {"usuario": "caritostuart16@hotmail.com", "password": "Montse1695-"}
+        {"usuario": "caritostuart16@hotmail.com", "password": "Montse1695-"},
+        {"usuario": "osvaldo.hdz.m@outlook.com", "password": "299792458.Light"}
     ]
     
     delete_file_if_exists('data/SessionInfo.json')
@@ -5678,15 +5917,17 @@ def answer_quiz_daily_contest_actinver():
     
     usuarios = [
         {"usuario": "caritostuart16@hotmail.com", "password": "Montse1695-"},
-        {"usuario": "osvaldo.hdz.m@outlook.com", "password": "299792458.Light"}
-        
+        {"usuario": "osvaldo.hdz.m@outlook.com", "password": "299792458.Light"}        
     ]
         
-    for _ in range(3):
-        for login_data in usuarios:
+    for login_data in usuarios:
+        for _ in range(3):
             establish_session(login_data=login_data)
             recover_session()
             pregunta = get_daily_quizz()
+            print("Ya se resondío no neceist aiterar")
+            if "Pregunta contestada" in pregunta:
+                break            
             send_quizz_answer(pregunta)
             close_session()
             time.sleep(3)
@@ -6199,6 +6440,8 @@ def main():
         ("Análisis técnico: Sugerir acciones para compra-venta usando estrategia swing trading por indicadores técnicos", suggest_technical),
         ("Análisis técnico: Sugerir acciones para compra-venta usando estrategia swing trading de consensos técnicos web", swing_trading_strategy),
         ("Análisis técnico: Sugerir acciones para compra-venta usando estrategia swing trading con machine learning", swing_trading_strategy_machine),
+        ("Análisis técnico (Beta 1): Hipótesis de acciones para compra-venta usando estrategia swing trading doble negativo", suggest_technical_beta1),
+        ("Análisis técnico (Beta 2): Hipótesis de acciones para compra-venta usando estrategia swing trading positivo-negativo-positivo", suggest_technical_beta2),
         ("Análisis cuantitativo: Sugerir distribución de portafolio a partir de optimización de la Razón de Sharpe Ajustada para Corto Plazo", set_optimizar_portafolio2),
         ("Análisis cuantitativo: Sugerir distribución de portafolio a partir de optimización Markowitz", set_optimizar_portafolio),
         ("Análisis cuantitativo: Sugerir distribución de portafolio a partir de optimización Litterman", set_optimizar_portafolio),
