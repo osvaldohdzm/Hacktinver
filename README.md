@@ -123,8 +123,6 @@ Stocks (acciones):
 TECS.MX,TSLA.MX,BAC.MX,CEMEXCPO.MX,PE&OLES.MX,ORBIA.MX,AMZN.MX,COST.MX,AMD.MX,FCX.MX,AAPL.MX,MSFT.MX
 ```  
 
-
-
 -----
 
 ### Get token for new operation (PROXY)
