@@ -3,9 +3,44 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# Resolve script dir and files
+# -------------------------------
+# Helper: install Python if missing
+# -------------------------------
+function Install-Python {
+    Write-Host "Checking for Python installation..."
+
+    if (-not (Get-Command py -ErrorAction SilentlyContinue) -and -not (Get-Command python -ErrorAction SilentlyContinue)) {
+        Write-Host "Python not found. Trying winget..."
+        try {
+            winget install --id Python.Python.310 -e --silent
+        }
+        catch {
+            Write-Host "winget failed or unavailable. Trying Chocolatey..."
+            # Ensure Chocolatey installed
+            if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+                Set-ExecutionPolicy Bypass -Scope Process -Force
+                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+                iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+            }
+            choco install python --version=3.10 -y
+        }
+    }
+
+    # Verify Python now exists
+    if (Get-Command py -ErrorAction SilentlyContinue) { return "py" }
+    elseif (Get-Command python -ErrorAction SilentlyContinue) { return "python" }
+    else {
+        Write-Error "Python installation failed. Please install manually and re-run."
+        exit 1
+    }
+}
+
+# -------------------------------
+# Main
+# -------------------------------
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Push-Location $scriptDir
+
 try {
     $requirementsFile = Join-Path $scriptDir 'requirements.txt'
     if (-not (Test-Path $requirementsFile)) {
@@ -13,26 +48,14 @@ try {
         exit 1
     }
 
-    # Locate Python (prefer py launcher on Windows)
-    $pythonCmd = $null
-    if (Get-Command py -ErrorAction SilentlyContinue) {
-        $pythonCmd = 'py'
-    } elseif (Get-Command python -ErrorAction SilentlyContinue) {
-        $pythonCmd = 'python'
-    } else {
-        Write-Error "Python is not installed or not on PATH. Please install Python 3.10+ from https://www.python.org/downloads/ and re-run."
-        exit 1
-    }
+    # Ensure Python installed
+    $pythonCmd = Install-Python
 
     # Create venv if missing
     $venvPath = Join-Path $scriptDir 'venv'
     if (-not (Test-Path (Join-Path $venvPath 'Scripts\python.exe'))) {
         Write-Host "Creating virtual environment at $venvPath ..."
-        & $pythonCmd -3 -m venv $venvPath 2>$null
-        if ($LASTEXITCODE -ne 0) {
-            # Fallback without -3 switch
-            & $pythonCmd -m venv $venvPath
-        }
+        & $pythonCmd -m venv $venvPath
     }
 
     # Build pip command inside venv
@@ -41,13 +64,12 @@ try {
         Write-Error "Virtual environment not created correctly."
         exit 1
     }
-    $pipCmd = "$venvPython -m pip"
 
     # Upgrade pip/setuptools/wheel
     Write-Host "Upgrading pip/setuptools/wheel ..."
     & $venvPython -m pip install --upgrade pip setuptools wheel --disable-pip-version-check
 
-    # Install all requirements in one shot (faster and resolves deps better)
+    # Install dependencies
     Write-Host "Installing dependencies from requirements.txt ..."
     & $venvPython -m pip install -r $requirementsFile --disable-pip-version-check
 
