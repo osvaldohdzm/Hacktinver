@@ -14,7 +14,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # -------------------------------
-# Helper: install Python if missing or only Microsoft Store alias
+# Helper: install Python if missing
 # -------------------------------
 function Install-Python {
     Write-Host "Checking for Python installation..."
@@ -30,31 +30,45 @@ function Install-Python {
         return "python"
     }
 
-    Write-Host "Python not found or only Microsoft Store alias detected. Installing real Python..."
+    Write-Host "Python not found. Installing real Python..."
 
-    # Try winget first
-    try {
-        winget install --id Python.Python.310 -e --silent
-    }
-    catch {
-        Write-Host "winget failed or unavailable. Trying Chocolatey..."
+    # --- 1. Try official EXE installer ---
+    $exeUrl = "https://www.python.org/ftp/python/3.13.7/python-3.13.7-amd64.exe"
+    $installerPath = "$env:TEMP\python-3.13.7-amd64.exe"
+    Write-Host "Downloading Python EXE from official site..."
+    Invoke-WebRequest -Uri $exeUrl -OutFile $installerPath -UseBasicParsing
 
-        # Ensure Chocolatey installed
-        if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
-            Write-Host "Installing Chocolatey..."
-            Set-ExecutionPolicy Bypass -Scope Process -Force
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-            iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-        }
+    Write-Host "Installing Python silently via EXE..."
+    $exeArgs = "/quiet InstallAllUsers=1 PrependPath=1 Include_test=0"
+    Start-Process -FilePath $installerPath -ArgumentList $exeArgs -Wait
 
-        choco install python --version=3.10 -y
-    }
-
-    # Verify Python now exists
+    # Check if Python installed
     $pythonPath = Get-Command python -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue
     if ($pythonPath -and -not ($pythonPath -like "*WindowsApps*")) {
         return "python"
     }
+
+    # --- 2. Fallback: winget ---
+    try {
+        Write-Host "EXE installer failed. Trying winget..."
+        winget install --id Python.Python.3.13 -e --silent
+        $pythonPath = Get-Command python -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue
+        if ($pythonPath -and -not ($pythonPath -like "*WindowsApps*")) { return "python" }
+    }
+    catch { Write-Host "winget failed or unavailable." }
+
+    # --- 3. Fallback: Chocolatey ---
+    Write-Host "Trying Chocolatey..."
+    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+        Set-ExecutionPolicy Bypass -Scope Process -Force
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+        iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+    }
+    choco install python --version=3.13 -y --no-progress
+
+    # Final verification
+    $pythonPath = Get-Command python -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue
+    if ($pythonPath -and -not ($pythonPath -like "*WindowsApps*")) { return "python" }
 
     Write-Error "Python installation failed. Please install manually from https://www.python.org/downloads/"
     exit 1
