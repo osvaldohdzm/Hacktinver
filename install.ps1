@@ -1,10 +1,20 @@
 # install.ps1
 # Bootstrap Python virtual environment and install dependencies from requirements.txt
+
+# -------------------------------
+# Elevate script if not running as admin
+# -------------------------------
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "Script not running as administrator. Relaunching with elevated privileges..."
+    Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    exit
+}
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # -------------------------------
-# Helper: install Python if missing or alias only
+# Helper: install Python if missing or only Microsoft Store alias
 # -------------------------------
 function Install-Python {
     Write-Host "Checking for Python installation..."
@@ -14,7 +24,7 @@ function Install-Python {
         return "py"
     }
 
-    # Detect if python.exe exists and is real (no alias to Store)
+    # Detect if python.exe exists and is real (no alias to Microsoft Store)
     $pythonPath = Get-Command python -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue
     if ($pythonPath -and -not ($pythonPath -like "*WindowsApps*")) {
         return "python"
@@ -22,24 +32,29 @@ function Install-Python {
 
     Write-Host "Python not found or only Microsoft Store alias detected. Installing real Python..."
 
-    # Try winget
+    # Try winget first
     try {
-        winget install --id Python.Python.310 -e
+        winget install --id Python.Python.310 -e --silent
     }
     catch {
         Write-Host "winget failed or unavailable. Trying Chocolatey..."
+
         # Ensure Chocolatey installed
         if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+            Write-Host "Installing Chocolatey..."
             Set-ExecutionPolicy Bypass -Scope Process -Force
             [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
             iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
         }
+
         choco install python --version=3.10 -y
     }
 
     # Verify Python now exists
     $pythonPath = Get-Command python -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue
-    if ($pythonPath -and -not ($pythonPath -like "*WindowsApps*")) { return "python" }
+    if ($pythonPath -and -not ($pythonPath -like "*WindowsApps*")) {
+        return "python"
+    }
 
     Write-Error "Python installation failed. Please install manually from https://www.python.org/downloads/"
     exit 1
@@ -68,7 +83,7 @@ try {
         & $pythonCmd -m venv $venvPath
     }
 
-    # Build pip command inside venv
+    # Verify venv
     $venvPython = Join-Path $venvPath 'Scripts\python.exe'
     if (-not (Test-Path $venvPython)) {
         Write-Error "Virtual environment not created correctly."
