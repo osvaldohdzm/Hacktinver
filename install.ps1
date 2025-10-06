@@ -4,35 +4,45 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # -------------------------------
-# Helper: install Python if missing
+# Helper: install Python if missing or alias only
 # -------------------------------
 function Install-Python {
     Write-Host "Checking for Python installation..."
 
-    if (-not (Get-Command py -ErrorAction SilentlyContinue) -and -not (Get-Command python -ErrorAction SilentlyContinue)) {
-        Write-Host "Python not found. Trying winget..."
-        try {
-            winget install --id Python.Python.310 -e --silent
+    # Detect if py launcher exists
+    if (Get-Command py -ErrorAction SilentlyContinue) {
+        return "py"
+    }
+
+    # Detect if python.exe exists and is real (no alias to Store)
+    $pythonPath = Get-Command python -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue
+    if ($pythonPath -and -not ($pythonPath -like "*WindowsApps*")) {
+        return "python"
+    }
+
+    Write-Host "Python not found or only Microsoft Store alias detected. Installing real Python..."
+
+    # Try winget
+    try {
+        winget install --id Python.Python.310 -e --silent
+    }
+    catch {
+        Write-Host "winget failed or unavailable. Trying Chocolatey..."
+        # Ensure Chocolatey installed
+        if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+            Set-ExecutionPolicy Bypass -Scope Process -Force
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+            iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
         }
-        catch {
-            Write-Host "winget failed or unavailable. Trying Chocolatey..."
-            # Ensure Chocolatey installed
-            if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
-                Set-ExecutionPolicy Bypass -Scope Process -Force
-                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-                iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-            }
-            choco install python --version=3.10 -y
-        }
+        choco install python --version=3.10 -y
     }
 
     # Verify Python now exists
-    if (Get-Command py -ErrorAction SilentlyContinue) { return "py" }
-    elseif (Get-Command python -ErrorAction SilentlyContinue) { return "python" }
-    else {
-        Write-Error "Python installation failed. Please install manually and re-run."
-        exit 1
-    }
+    $pythonPath = Get-Command python -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue
+    if ($pythonPath -and -not ($pythonPath -like "*WindowsApps*")) { return "python" }
+
+    Write-Error "Python installation failed. Please install manually from https://www.python.org/downloads/"
+    exit 1
 }
 
 # -------------------------------
