@@ -6447,146 +6447,178 @@ def monitor_stocks():
     """
     Monitor de Stocks - Muestra gráficas de variaciones acumuladas en tiempo real
     Descarga datos de https://www.retoactinver.com/archivos/datosReto.txt
+    Se actualiza automáticamente cada 3 segundos
     """
-    console.print("[bold blue]Monitor de Stocks - Variaciones Acumuladas[/bold blue]")
-    console.print("Descargando datos de Actinver...")
+    console.print("[bold blue]Monitor de Stocks - Variaciones Acumuladas en Tiempo Real[/bold blue]")
+    console.print("[yellow]Presiona Ctrl+C para detener el monitoreo[/yellow]")
+    
+    # Configurar matplotlib para modo interactivo
+    plt.ion()
+    fig, ax = plt.subplots(figsize=(14, 8))
+    
+    update_count = 0
     
     try:
-        # Descargar datos de la URL
-        url = "https://www.retoactinver.com/archivos/datosReto.txt"
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        
-        # Procesar los datos
-        lines = response.text.strip().split('\n')
-        stocks_data = {}
-        
-        for line in lines:
-            if not line.strip():
-                continue
-                
-            parts = line.split('|')
-            if len(parts) < 5:
-                continue
-                
+        while True:
+            update_count += 1
+            current_time = datetime.now().strftime("%H:%M:%S")
+            
             try:
-                symbol = parts[1]  # Símbolo del stock
-                current_price = float(parts[3])  # Precio actual
-                previous_price = float(parts[4])  # Precio anterior
+                # Descargar datos de la URL
+                url = "https://www.retoactinver.com/archivos/datosReto.txt"
+                response = requests.get(url, timeout=10)
+                response.raise_for_status()
                 
-                # Calcular variación porcentual
-                if previous_price > 0:
-                    variation_pct = ((current_price - previous_price) / previous_price) * 100
-                else:
-                    variation_pct = 0
+                # Procesar los datos
+                lines = response.text.strip().split('\n')
+                stocks_data = {}
                 
-                stocks_data[symbol] = {
-                    'current_price': current_price,
-                    'previous_price': previous_price,
-                    'variation_pct': variation_pct,
-                    'variation_abs': current_price - previous_price
-                }
+                for line in lines:
+                    if not line.strip():
+                        continue
+                        
+                    parts = line.split('|')
+                    if len(parts) < 5:
+                        continue
+                        
+                    try:
+                        symbol = parts[1]  # Símbolo del stock
+                        current_price = float(parts[3])  # Precio actual
+                        previous_price = float(parts[4])  # Precio anterior
+                        
+                        # Calcular variación porcentual
+                        if previous_price > 0:
+                            variation_pct = ((current_price - previous_price) / previous_price) * 100
+                        else:
+                            variation_pct = 0
+                        
+                        stocks_data[symbol] = {
+                            'current_price': current_price,
+                            'previous_price': previous_price,
+                            'variation_pct': variation_pct,
+                            'variation_abs': current_price - previous_price
+                        }
+                        
+                    except (ValueError, IndexError):
+                        continue
                 
-            except (ValueError, IndexError):
-                continue
-        
-        if not stocks_data:
-            console.print("[bold red]No se pudieron procesar los datos[/bold red]")
-            return
-        
-        # Ordenar por variación porcentual (de mayor a menor ganancia)
-        sorted_stocks = sorted(stocks_data.items(), key=lambda x: x[1]['variation_pct'], reverse=True)
-        
-        # Mostrar tabla de resultados
-        table = Table(title="Monitor de Stocks - Variaciones del Día")
-        table.add_column("Símbolo", style="cyan", no_wrap=True)
-        table.add_column("Precio Actual", style="magenta")
-        table.add_column("Precio Anterior", style="yellow")
-        table.add_column("Variación %", style="green")
-        table.add_column("Variación $", style="blue")
-        table.add_column("Estado", style="bold")
-        
-        for symbol, data in sorted_stocks[:20]:  # Mostrar top 20
-            var_pct = data['variation_pct']
-            var_abs = data['variation_abs']
+                if not stocks_data:
+                    console.print(f"[bold red][{current_time}] No se pudieron procesar los datos[/bold red]")
+                    time.sleep(3)
+                    continue
+                
+                # Limpiar pantalla y mostrar información actualizada
+                clear_screen()
+                console.print(f"[bold blue]Monitor de Stocks - Actualización #{update_count} - {current_time}[/bold blue]")
+                console.print("[yellow]Presiona Ctrl+C para detener el monitoreo[/yellow]\n")
+                
+                # Ordenar por variación porcentual (de mayor a menor ganancia)
+                sorted_stocks = sorted(stocks_data.items(), key=lambda x: x[1]['variation_pct'], reverse=True)
+                
+                # Mostrar tabla de resultados (top 15 para mejor visualización)
+                table = Table(title=f"Top 15 Stocks - Variaciones del Día ({current_time})")
+                table.add_column("Símbolo", style="cyan", no_wrap=True)
+                table.add_column("Precio Actual", style="magenta")
+                table.add_column("Precio Anterior", style="yellow")
+                table.add_column("Variación %", style="green")
+                table.add_column("Variación $", style="blue")
+                table.add_column("Estado", style="bold")
+                
+                for symbol, data in sorted_stocks[:15]:  # Mostrar top 15
+                    var_pct = data['variation_pct']
+                    var_abs = data['variation_abs']
+                    
+                    # Determinar color y estado
+                    if var_pct > 0:
+                        status = "📈 GANANDO"
+                        var_pct_str = f"[green]+{var_pct:.2f}%[/green]"
+                        var_abs_str = f"[green]+${var_abs:.2f}[/green]"
+                    elif var_pct < 0:
+                        status = "📉 PERDIENDO"
+                        var_pct_str = f"[red]{var_pct:.2f}%[/red]"
+                        var_abs_str = f"[red]${var_abs:.2f}[/red]"
+                    else:
+                        status = "➡️ SIN CAMBIO"
+                        var_pct_str = f"{var_pct:.2f}%"
+                        var_abs_str = f"${var_abs:.2f}"
+                    
+                    table.add_row(
+                        symbol,
+                        f"${data['current_price']:.2f}",
+                        f"${data['previous_price']:.2f}",
+                        var_pct_str,
+                        var_abs_str,
+                        status
+                    )
+                
+                console.print(table)
+                
+                # Actualizar gráfica
+                ax.clear()
+                
+                # Preparar datos para la gráfica (top 12 para mejor visualización)
+                symbols = [item[0] for item in sorted_stocks[:12]]
+                variations = [item[1]['variation_pct'] for item in sorted_stocks[:12]]
+                
+                # Crear la gráfica actualizada
+                colors = ['green' if v >= 0 else 'red' for v in variations]
+                bars = ax.bar(range(len(symbols)), variations, color=colors, alpha=0.7)
+                
+                ax.set_xlabel('Símbolos de Acciones')
+                ax.set_ylabel('Variación Porcentual (%)')
+                ax.set_title(f'Monitor de Stocks - Variaciones Acumuladas ({current_time})')
+                ax.set_xticks(range(len(symbols)))
+                ax.set_xticklabels(symbols, rotation=45, ha='right')
+                ax.grid(True, alpha=0.3)
+                
+                # Agregar valores en las barras
+                for bar, variation in zip(bars, variations):
+                    height = bar.get_height()
+                    ax.text(bar.get_x() + bar.get_width()/2., height + (0.1 if height >= 0 else -0.3),
+                           f'{variation:.1f}%', ha='center', va='bottom' if height >= 0 else 'top')
+                
+                plt.tight_layout()
+                plt.draw()
+                plt.pause(0.1)  # Pausa pequeña para actualizar la gráfica
+                
+                # Mostrar estadísticas generales
+                total_stocks = len(stocks_data)
+                gaining_stocks = sum(1 for data in stocks_data.values() if data['variation_pct'] > 0)
+                losing_stocks = sum(1 for data in stocks_data.values() if data['variation_pct'] < 0)
+                neutral_stocks = total_stocks - gaining_stocks - losing_stocks
+                
+                console.print(f"\n[bold blue]Resumen del Mercado ({current_time}):[/bold blue]")
+                console.print(f"Total de acciones monitoreadas: {total_stocks}")
+                console.print(f"[green]Acciones ganando: {gaining_stocks} ({gaining_stocks/total_stocks*100:.1f}%)[/green]")
+                console.print(f"[red]Acciones perdiendo: {losing_stocks} ({losing_stocks/total_stocks*100:.1f}%)[/red]")
+                console.print(f"Acciones sin cambio: {neutral_stocks} ({neutral_stocks/total_stocks*100:.1f}%)")
+                
+                # Guardar gráfica cada 10 actualizaciones
+                if update_count % 10 == 0:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"monitor_stocks_{timestamp}.png"
+                    plt.savefig(filename, dpi=300, bbox_inches='tight')
+                    console.print(f"[bold green]Gráfica guardada como: {filename}[/bold green]")
+                
+                console.print(f"\n[dim]Próxima actualización en 3 segundos... (Actualización #{update_count})[/dim]")
+                
+            except requests.RequestException as e:
+                console.print(f"[bold red][{current_time}] Error al descargar datos: {e}[/bold red]")
+            except Exception as e:
+                console.print(f"[bold red][{current_time}] Error inesperado: {e}[/bold red]")
             
-            # Determinar color y estado
-            if var_pct > 0:
-                status = "📈 GANANDO"
-                var_pct_str = f"[green]+{var_pct:.2f}%[/green]"
-                var_abs_str = f"[green]+${var_abs:.2f}[/green]"
-            elif var_pct < 0:
-                status = "📉 PERDIENDO"
-                var_pct_str = f"[red]{var_pct:.2f}%[/red]"
-                var_abs_str = f"[red]${var_abs:.2f}[/red]"
-            else:
-                status = "➡️ SIN CAMBIO"
-                var_pct_str = f"{var_pct:.2f}%"
-                var_abs_str = f"${var_abs:.2f}"
+            # Esperar 3 segundos antes de la siguiente actualización
+            time.sleep(3)
             
-            table.add_row(
-                symbol,
-                f"${data['current_price']:.2f}",
-                f"${data['previous_price']:.2f}",
-                var_pct_str,
-                var_abs_str,
-                status
-            )
-        
-        console.print(table)
-        
-        # Crear gráfica de variaciones
-        console.print("\n[bold blue]Generando gráfica de variaciones...[/bold blue]")
-        
-        # Preparar datos para la gráfica
-        symbols = [item[0] for item in sorted_stocks[:15]]  # Top 15 para mejor visualización
-        variations = [item[1]['variation_pct'] for item in sorted_stocks[:15]]
-        
-        # Crear la gráfica
-        plt.figure(figsize=(12, 8))
-        colors = ['green' if v >= 0 else 'red' for v in variations]
-        
-        bars = plt.bar(range(len(symbols)), variations, color=colors, alpha=0.7)
-        plt.xlabel('Símbolos de Acciones')
-        plt.ylabel('Variación Porcentual (%)')
-        plt.title('Monitor de Stocks - Variaciones Acumuladas del Día')
-        plt.xticks(range(len(symbols)), symbols, rotation=45, ha='right')
-        plt.grid(True, alpha=0.3)
-        
-        # Agregar valores en las barras
-        for bar, variation in zip(bars, variations):
-            height = bar.get_height()
-            plt.text(bar.get_x() + bar.get_width()/2., height + (0.1 if height >= 0 else -0.3),
-                    f'{variation:.1f}%', ha='center', va='bottom' if height >= 0 else 'top')
-        
-        plt.tight_layout()
-        
-        # Guardar la gráfica
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"monitor_stocks_{timestamp}.png"
-        plt.savefig(filename, dpi=300, bbox_inches='tight')
-        
-        console.print(f"[bold green]Gráfica guardada como: {filename}[/bold green]")
-        
-        # Mostrar estadísticas generales
-        total_stocks = len(stocks_data)
-        gaining_stocks = sum(1 for data in stocks_data.values() if data['variation_pct'] > 0)
-        losing_stocks = sum(1 for data in stocks_data.values() if data['variation_pct'] < 0)
-        neutral_stocks = total_stocks - gaining_stocks - losing_stocks
-        
-        console.print(f"\n[bold blue]Resumen del Mercado:[/bold blue]")
-        console.print(f"Total de acciones monitoreadas: {total_stocks}")
-        console.print(f"[green]Acciones ganando: {gaining_stocks} ({gaining_stocks/total_stocks*100:.1f}%)[/green]")
-        console.print(f"[red]Acciones perdiendo: {losing_stocks} ({losing_stocks/total_stocks*100:.1f}%)[/red]")
-        console.print(f"Acciones sin cambio: {neutral_stocks} ({neutral_stocks/total_stocks*100:.1f}%)")
-        
-        # Mostrar la gráfica
-        plt.show()
-        
-    except requests.RequestException as e:
-        console.print(f"[bold red]Error al descargar datos: {e}[/bold red]")
+    except KeyboardInterrupt:
+        console.print(f"\n[bold yellow]Monitor detenido por el usuario después de {update_count} actualizaciones[/bold yellow]")
+        plt.ioff()  # Desactivar modo interactivo
+        plt.close(fig)  # Cerrar la figura
+        console.print("[bold green]Gráfica cerrada correctamente[/bold green]")
     except Exception as e:
-        console.print(f"[bold red]Error inesperado: {e}[/bold red]")
+        console.print(f"[bold red]Error crítico en el monitor: {e}[/bold red]")
+        plt.ioff()
+        plt.close(fig)
 
 
 def utilidades_actinver_2023():
