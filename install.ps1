@@ -24,7 +24,7 @@ function Install-Python {
 
     # Try winget
     try {
-        winget install --id Python.Python.310 -e --silent
+        winget install --id Python.Python.310 -e
     }
     catch {
         Write-Host "winget failed or unavailable. Trying Chocolatey..."
