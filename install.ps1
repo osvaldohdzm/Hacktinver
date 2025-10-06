@@ -192,8 +192,12 @@ try {
         exit 1
     }
 
+winget install --id Microsoft.VisualStudio.2022.BuildTools -e --source winget --accept-source-agreements --accept-package-agreements
+
     Write-Stamp "Instalación completada. Activa el venv con:`n`t .\\venv\\Scripts\\Activate.ps1"
 }
 finally {
     Pop-Location
 }
+
+
