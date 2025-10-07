@@ -7,6 +7,8 @@ evidences/*
 
 *.csv
 
+*.png
+
 # Miscellaneous
 *.class
 *.log

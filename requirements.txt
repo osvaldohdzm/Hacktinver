@@ -107,3 +107,4 @@ yahoo-earnings-calendar==0.6.0
 yahoo-fin==0.8.9.1
 yfinance==0.2.66
 zipp==3.23.0
+statsmodels==0.14.4
