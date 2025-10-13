@@ -39,6 +39,12 @@ import yfinance as yf
 import schedule
 import pdfkit
 import seaborn as sns
+# Reduce noisy yfinance logs (HTTP 404 spam). We'll report our own concise status.
+try:
+    logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+except Exception:
+    pass
+
 import scipy.optimize as sco
 import pytest
 import pandas as pd
@@ -246,29 +252,539 @@ def _pick_price_series(df: pd.DataFrame) -> pd.Series:
     return s
 
 
-def download_prices_any_listing(ticker: str, start: str = None, end: str = None, period: str = None) -> pd.Series:
-    """Try downloading prices for a symbol with and without .MX suffix.
-    - If start/end provided, use date range; else use period.
-    - Returns a price Series or empty Series if not found.
+def normalize_ticker_to_mx(ticker: str) -> str:
     """
-    t = (ticker or "").strip()
-    # Prefer US (unsuffixed) first; only try .MX if user provided it or unsuffixed failed
+    Normaliza cualquier ticker para usar SIEMPRE la versión mexicana (.MX)
+    Maneja casos: SOXL, SOXL.MX, SOXL.mx, soxl.mx -> SOXL.MX
+    Evita duplicaciones como .MX.MX
+    """
+    if not ticker:
+        return ""
+
+    # Mapa de alias/normalizaciones para tickers MX y nombres frecuentes del reto
+    # Clave sin sufijo; valor con sufijo .MX
+    MX_ALIAS_MAP = {
+        # Ejemplos de alias corporativos vs. Yahoo
+        "ALFA": "ALFAA.MX",
+        "BIMBO": "BIMBOA.MX",
+        "CEMEX": "CEMEXCPO.MX",
+        "GMEXICO": "GMEXICOB.MX",
+        "PE&OLES": "PE&OLES.MX",
+        "BOLSA": "BOLSAA.MX",
+        "LAB": "LABB.MX",
+        "KIMBER": "KIMBERA.MX",  # común en BMV
+        "LIVEPOL": "LIVEPOLC-1.MX",
+        "TLEVISA": "TLEVISACPO.MX",
+        "WALMEX": "WALMEX.MX",
+        "FEMSA": "FEMSAUBD.MX",
+        # Variantes 1 vs sin sufijo
+        "OXY1": "OXY.MX",
+        "CPE": "CPE.MX",
+        # ETFs locales comunes
+        "NAFTRAC": "NAFTRAC.MX",
+    }
+
+    # Instrumentos de casa Actinver que no existen en Yahoo (omitir para evitar 404)
+    ACTINVER_HOUSE_INSTRUMENTS = {
+        "ACTI500", "ACTICRE", "ACTICOB", "ACTDUAL", "ACTIREN", "ACTIMED",
+        "ACTIGOB", "ACTIG+", "ACTIG+2", "ACTIVAR", "ACTIPLU", "DIGITAL",
+        "ESFERA", "ESCALA", "DINAMO", "MAYA", "MAXIMO", "SALUD", "ROBOTIK",
+        "OPORT1"
+    }
+
+    # Limpiar y convertir a mayúsculas
+    raw = ticker.strip()
+    t = raw.upper()
+
+    # Si viene ya con .MX exacto, devolverlo tal cual
     if t.endswith(".MX"):
-        symbols_to_try = [t, t.replace(".MX", "")]
+        return t
+
+    # Quitar sufijo .mx en minúscula
+    if t.endswith(".mx"):
+        t = t[:-3]
+
+    base = t
+
+    # Si ya viene con un sufijo como .B o .C, preferimos alias si existe, si no agregamos .MX
+    if "." in base:
+        symbol = base.split(".")[0]
     else:
-        symbols_to_try = [t, f"{t}.MX"]
-    for sym in symbols_to_try:
-        try:
-            if start or end:
-                df = yf.download(sym, start=start, end=end, interval="1d")
-            else:
-                df = yf.download(sym, period=period or "6mo")
-            s = _pick_price_series(df)
-            if not s.empty:
-                return s.rename(ticker)
-        except Exception:
-            continue
+        symbol = base
+
+    # Si es instrumento de casa Actinver, devolver marcador especial para omitir
+    if symbol in ACTINVER_HOUSE_INSTRUMENTS:
+        return "__SKIP_ACTINVER__"
+
+    # Resolver alias conocidos
+    if symbol in MX_ALIAS_MAP:
+        return MX_ALIAS_MAP[symbol]
+
+    # Por defecto, agregar .MX
+    return f"{symbol}.MX"
+
+
+def download_prices_mx_only(ticker: str, start: str = None, end: str = None, period: str = None, progress: bool = False) -> pd.Series:
+    """
+    Descarga precios EXCLUSIVAMENTE usando tickers mexicanos (.MX)
+    Normaliza automáticamente cualquier ticker a su versión .MX
+    """
+    # Normalizar ticker a versión mexicana
+    mx_ticker = normalize_ticker_to_mx(ticker)
+    
+    try:
+        if start or end:
+            df = yf.download(mx_ticker, start=start, end=end, interval="1d", progress=progress)
+        else:
+            df = yf.download(mx_ticker, period=period or "6mo", progress=progress)
+        
+        s = _pick_price_series(df)
+        if not s.empty:
+            return s.rename(ticker)  # Renombrar con el ticker original para consistencia
+            
+    except Exception as e:
+        console.print(f"[red]Error descargando {mx_ticker}: {e}[/red]")
+    
     return pd.Series(dtype=float, name=ticker)
+
+
+def get_usd_to_mxn_rate():
+    """
+    Obtiene el tipo de cambio USD a MXN usando múltiples APIs públicas
+    """
+    # Lista de APIs de tipo de cambio para probar
+    exchange_apis = [
+        {
+            'name': 'ExchangeRate-API',
+            'url': 'https://api.exchangerate-api.com/v4/latest/USD',
+            'parser': lambda data: data['rates'].get('MXN', None)
+        },
+        {
+            'name': 'Fixer.io',
+            'url': 'https://api.fixer.io/latest?base=USD&symbols=MXN',
+            'parser': lambda data: data.get('rates', {}).get('MXN', None)
+        },
+        {
+            'name': 'CurrencyAPI',
+            'url': 'https://api.currencyapi.com/v3/latest?apikey=free&currencies=MXN&base_currency=USD',
+            'parser': lambda data: data.get('data', {}).get('MXN', {}).get('value', None)
+        }
+    ]
+    
+    # Intentar con APIs de tipo de cambio
+    for api in exchange_apis:
+        try:
+            import requests
+            response = requests.get(api['url'], timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                rate = api['parser'](data)
+                if rate and isinstance(rate, (int, float)) and 15 <= rate <= 25:  # Validar rango razonable
+                    console.print(f"[green]💱 Tipo de cambio obtenido de {api['name']}: {rate:.4f}[/green]")
+                    return float(rate)
+        except Exception as e:
+            console.print(f"[yellow]⚠️ {api['name']} falló: {str(e)[:30]}[/yellow]")
+            continue
+    
+    try:
+        # Fallback: usar Yahoo Finance para obtener USDMXN
+        console.print("[yellow]💱 Intentando Yahoo Finance para tipo de cambio...[/yellow]")
+        usd_mxn = yf.download("USDMXN=X", period="1d", progress=False)
+        if not usd_mxn.empty and 'Close' in usd_mxn.columns:
+            rate = float(usd_mxn['Close'].iloc[-1])
+            if 15 <= rate <= 25:  # Validar rango razonable
+                console.print(f"[green]💱 Tipo de cambio de Yahoo Finance: {rate:.4f}[/green]")
+                return rate
+    except Exception as e:
+        console.print(f"[yellow]⚠️ Yahoo Finance tipo de cambio falló: {str(e)[:30]}[/yellow]")
+    
+    # Fallback final: tipo de cambio aproximado
+    console.print("[yellow]⚠️ No se pudo obtener tipo de cambio, usando 18.50 MXN/USD[/yellow]")
+    return 18.50
+
+
+def get_stock_data_alternative_apis(ticker: str, period: str = "3mo") -> pd.DataFrame:
+    """
+    Intenta obtener datos de stock usando APIs alternativas cuando Yahoo Finance falla
+    """
+    console.print(f"[cyan]🔍 Buscando {ticker} en fuentes alternativas...[/cyan]")
+    
+    # 1. Intentar con Alpha Vantage (API gratuita)
+    try:
+        alpha_vantage_key = os.getenv("ALPHA_VANTAGE_API_KEY", "demo")  # demo key para pruebas
+        if alpha_vantage_key and alpha_vantage_key != "demo":
+            import requests
+            url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={ticker}&apikey={alpha_vantage_key}&outputsize=compact"
+            response = requests.get(url, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if "Time Series (Daily)" in data:
+                    time_series = data["Time Series (Daily)"]
+                    
+                    # Convertir a DataFrame
+                    df_data = []
+                    for date_str, values in time_series.items():
+                        df_data.append({
+                            'Date': pd.to_datetime(date_str),
+                            'Open': float(values['1. open']),
+                            'High': float(values['2. high']),
+                            'Low': float(values['3. low']),
+                            'Close': float(values['4. close']),
+                            'Volume': int(values['5. volume'])
+                        })
+                    
+                    if df_data:
+                        df = pd.DataFrame(df_data)
+                        df.set_index('Date', inplace=True)
+                        df.sort_index(inplace=True)
+                        
+                        # Filtrar por período
+                        if len(df) > 60:  # Suficientes datos
+                            console.print(f"[green]✅ {ticker} encontrado en Alpha Vantage[/green]")
+                            return df
+    except Exception as e:
+        console.print(f"[yellow]⚠️ Alpha Vantage falló para {ticker}: {str(e)[:30]}[/yellow]")
+    
+    # 2. Intentar con Polygon.io (API gratuita limitada)
+    try:
+        polygon_key = os.getenv("POLYGON_API_KEY")
+        if polygon_key:
+            import requests
+            from datetime import datetime, timedelta
+            
+            # Calcular fechas
+            end_date = datetime.now()
+            if period == "1mo":
+                start_date = end_date - timedelta(days=30)
+            elif period == "3mo":
+                start_date = end_date - timedelta(days=90)
+            else:
+                start_date = end_date - timedelta(days=90)
+            
+            url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}?adjusted=true&sort=asc&apikey={polygon_key}"
+            response = requests.get(url, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("status") == "OK" and "results" in data:
+                    results = data["results"]
+                    
+                    # Convertir a DataFrame
+                    df_data = []
+                    for item in results:
+                        df_data.append({
+                            'Date': pd.to_datetime(item['t'], unit='ms'),
+                            'Open': float(item['o']),
+                            'High': float(item['h']),
+                            'Low': float(item['l']),
+                            'Close': float(item['c']),
+                            'Volume': int(item['v'])
+                        })
+                    
+                    if df_data:
+                        df = pd.DataFrame(df_data)
+                        df.set_index('Date', inplace=True)
+                        df.sort_index(inplace=True)
+                        
+                        if len(df) > 20:  # Suficientes datos
+                            console.print(f"[green]✅ {ticker} encontrado en Polygon.io[/green]")
+                            return df
+    except Exception as e:
+        console.print(f"[yellow]⚠️ Polygon.io falló para {ticker}: {str(e)[:30]}[/yellow]")
+    
+    # 3. Intentar con IEX Cloud (API gratuita limitada)
+    try:
+        iex_token = os.getenv("IEX_CLOUD_TOKEN")
+        if iex_token:
+            import requests
+            
+            # Determinar rango para IEX
+            if period == "1mo":
+                range_param = "1m"
+            elif period == "3mo":
+                range_param = "3m"
+            else:
+                range_param = "3m"
+            
+            url = f"https://cloud.iexapis.com/stable/stock/{ticker}/chart/{range_param}?token={iex_token}"
+            response = requests.get(url, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                if data and isinstance(data, list):
+                    # Convertir a DataFrame
+                    df_data = []
+                    for item in data:
+                        if all(k in item for k in ['date', 'open', 'high', 'low', 'close', 'volume']):
+                            df_data.append({
+                                'Date': pd.to_datetime(item['date']),
+                                'Open': float(item['open']) if item['open'] else 0,
+                                'High': float(item['high']) if item['high'] else 0,
+                                'Low': float(item['low']) if item['low'] else 0,
+                                'Close': float(item['close']) if item['close'] else 0,
+                                'Volume': int(item['volume']) if item['volume'] else 0
+                            })
+                    
+                    if df_data:
+                        df = pd.DataFrame(df_data)
+                        df.set_index('Date', inplace=True)
+                        df.sort_index(inplace=True)
+                        
+                        if len(df) > 20:  # Suficientes datos
+                            console.print(f"[green]✅ {ticker} encontrado en IEX Cloud[/green]")
+                            return df
+    except Exception as e:
+        console.print(f"[yellow]⚠️ IEX Cloud falló para {ticker}: {str(e)[:30]}[/yellow]")
+    
+    # 4. Intentar con Financial Modeling Prep (API gratuita limitada)
+    try:
+        fmp_key = os.getenv("FMP_API_KEY")
+        if fmp_key:
+            import requests
+            
+            url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{ticker}?apikey={fmp_key}"
+            response = requests.get(url, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                if "historical" in data:
+                    historical = data["historical"]
+                    
+                    # Convertir a DataFrame
+                    df_data = []
+                    for item in historical[:90]:  # Últimos 90 días
+                        df_data.append({
+                            'Date': pd.to_datetime(item['date']),
+                            'Open': float(item['open']),
+                            'High': float(item['high']),
+                            'Low': float(item['low']),
+                            'Close': float(item['close']),
+                            'Volume': int(item['volume'])
+                        })
+                    
+                    if df_data:
+                        df = pd.DataFrame(df_data)
+                        df.set_index('Date', inplace=True)
+                        df.sort_index(inplace=True)
+                        
+                        if len(df) > 20:  # Suficientes datos
+                            console.print(f"[green]✅ {ticker} encontrado en Financial Modeling Prep[/green]")
+                            return df
+    except Exception as e:
+        console.print(f"[yellow]⚠️ Financial Modeling Prep falló para {ticker}: {str(e)[:30]}[/yellow]")
+    
+    console.print(f"[red]❌ {ticker} no encontrado en ninguna fuente alternativa[/red]")
+    return pd.DataFrame()
+
+
+def download_multiple_mx_tickers(tickers: list, period: str = "3mo", progress: bool = False) -> dict:
+    """
+    Descarga múltiples tickers con fallback automático:
+    1. Intenta primero con versión mexicana (.MX)
+    2. Si no encuentra, intenta con versión USA y convierte USD a MXN
+    3. Avisa claramente cuando usa datos USA convertidos
+    """
+    if not tickers:
+        return {}
+    
+    # Normalizar todos los tickers a versión .MX, filtrando los que marcamos para omitir
+    normalized = [normalize_ticker_to_mx(t) for t in tickers]
+    filtered_pairs = [(orig, mx) for orig, mx in zip(tickers, normalized) if mx != "__SKIP_ACTINVER__"]
+    skipped = [orig for orig, mx in zip(tickers, normalized) if mx == "__SKIP_ACTINVER__"]
+    if skipped:
+        console.print(f"[yellow]⏭️ Omitiendo instrumentos no disponibles en Yahoo: {', '.join(skipped)}[/yellow]")
+    if not filtered_pairs:
+        return {}
+    mx_tickers = [mx for _, mx in filtered_pairs]
+    original_order = [orig for orig, _ in filtered_pairs]
+    
+    data = {}
+    failed_mx_tickers = []
+    usd_to_mxn_rate = None
+    
+    try:
+        # Intentar descarga batch con tickers .MX
+        console.print(f"[cyan]📊 Descargando {len(mx_tickers)} símbolos mexicanos (.MX)...[/cyan]")
+        
+        # Descargar en lotes de 10 para evitar timeouts
+        batch_size = 10
+        for i in range(0, len(mx_tickers), batch_size):
+            batch_tickers = mx_tickers[i:i+batch_size]
+            batch_originals = original_order[i:i+batch_size]
+            
+            try:
+                # Descarga batch
+                batch_data = yf.download(batch_tickers, period=period, group_by='ticker', progress=progress)
+                
+                if not batch_data.empty:
+                    for mx_ticker, original_ticker in zip(batch_tickers, batch_originals):
+                        try:
+                            if len(batch_tickers) == 1:
+                                # Solo un ticker en el batch
+                                df = batch_data
+                            else:
+                                # Múltiples tickers - verificar si existe en las columnas
+                                if hasattr(batch_data.columns, 'levels') and mx_ticker in batch_data.columns.levels[0]:
+                                    df = batch_data[mx_ticker]
+                                else:
+                                    df = pd.DataFrame()
+                            
+                            # Verificar que realmente tenemos datos válidos
+                            if (not df.empty and len(df) > 5 and 'Close' in df.columns):
+                                # Verificar que hay al menos algunos valores no-NaN
+                                close_series = df['Close']
+                                valid_prices = close_series.dropna()
+                                
+                                if len(valid_prices) > 0:
+                                    data[original_ticker] = df
+                                    data[original_ticker].attrs = {'currency': 'MXN', 'source': 'MX'}
+                                    console.print(f"[green]✅ {original_ticker} ({mx_ticker})[/green]", end=" ")
+                                else:
+                                    failed_mx_tickers.append((original_ticker, mx_ticker))
+                                    console.print(f"[yellow]⚠️ {original_ticker} (datos vacíos)[/yellow]", end=" ")
+                            else:
+                                failed_mx_tickers.append((original_ticker, mx_ticker))
+                                console.print(f"[yellow]⚠️ {original_ticker} (sin datos)[/yellow]", end=" ")
+                                
+                        except Exception as e:
+                            failed_mx_tickers.append((original_ticker, mx_ticker))
+                            console.print(f"[red]❌ {original_ticker} (error: {str(e)[:20]})[/red]", end=" ")
+                            
+            except Exception as e:
+                # Si falla el batch, intentar individual
+                console.print(f"\n[yellow]⚠️ Batch falló, intentando individual...[/yellow]")
+                for mx_ticker, original_ticker in zip(batch_tickers, batch_originals):
+                    try:
+                        df = yf.download(mx_ticker, period=period, progress=False)
+                        if not df.empty and len(df) > 0:
+                            data[original_ticker] = df
+                            data[original_ticker].attrs = {'currency': 'MXN', 'source': 'MX'}
+                            console.print(f"[green]✅ {original_ticker}[/green]", end=" ")
+                        else:
+                            failed_mx_tickers.append((original_ticker, mx_ticker))
+                            console.print(f"[yellow]⚠️ {original_ticker}[/yellow]", end=" ")
+                    except:
+                        failed_mx_tickers.append((original_ticker, mx_ticker))
+                        console.print(f"[red]❌ {original_ticker}[/red]", end=" ")
+        
+        # Intentar fallback a versión USA para los que fallaron
+        if failed_mx_tickers:
+            console.print(f"\n[bold yellow]🔄 FALLBACK: Intentando versión USA para {len(failed_mx_tickers)} símbolos no encontrados en .MX[/bold yellow]")
+            
+            # Obtener tipo de cambio una sola vez
+            usd_to_mxn_rate = get_usd_to_mxn_rate()
+            console.print(f"[bold blue]💱 Tipo de cambio USD/MXN: {usd_to_mxn_rate:.4f} pesos por dólar[/bold blue]")
+            
+            usa_success_count = 0
+            alternative_success_count = 0
+            
+            for original_ticker, mx_ticker in failed_mx_tickers:
+                ticker_found = False
+                
+                # 1. Intentar primero con Yahoo Finance USA
+                try:
+                    usa_ticker = original_ticker.upper()
+                    df = yf.download(usa_ticker, period=period, progress=False)
+                    
+                    if not df.empty and len(df) > 5 and 'Close' in df.columns:
+                        close_series = df['Close']
+                        valid_prices = close_series.dropna()
+                        
+                        if len(valid_prices) > 0:
+                            # Convertir precios de USD a MXN
+                            price_columns = ['Open', 'High', 'Low', 'Close', 'Adj Close']
+                            for col in price_columns:
+                                if col in df.columns:
+                                    df[col] = df[col] * usd_to_mxn_rate
+                            
+                            data[original_ticker] = df
+                            data[original_ticker].attrs = {
+                                'currency': 'MXN', 
+                                'source': 'USA_YF', 
+                                'exchange_rate': usd_to_mxn_rate,
+                                'converted_from_usd': True
+                            }
+                            usa_success_count += 1
+                            ticker_found = True
+                            console.print(f"[bold blue]🔄 {original_ticker} (USA→MXN @ {usd_to_mxn_rate:.2f})[/bold blue]", end=" ")
+                        
+                except Exception as e:
+                    pass  # Continuar con fuentes alternativas
+                
+                # 2. Si Yahoo Finance USA falló, intentar con APIs alternativas
+                if not ticker_found:
+                    try:
+                        alt_df = get_stock_data_alternative_apis(original_ticker, period)
+                        
+                        if not alt_df.empty and len(alt_df) > 5 and 'Close' in alt_df.columns:
+                            close_series = alt_df['Close']
+                            valid_prices = close_series.dropna()
+                            
+                            if len(valid_prices) > 0:
+                                # Convertir precios de USD a MXN (asumiendo que las APIs alternativas devuelven USD)
+                                price_columns = ['Open', 'High', 'Low', 'Close', 'Adj Close']
+                                for col in price_columns:
+                                    if col in alt_df.columns:
+                                        alt_df[col] = alt_df[col] * usd_to_mxn_rate
+                                
+                                data[original_ticker] = alt_df
+                                data[original_ticker].attrs = {
+                                    'currency': 'MXN', 
+                                    'source': 'ALTERNATIVE_API', 
+                                    'exchange_rate': usd_to_mxn_rate,
+                                    'converted_from_usd': True
+                                }
+                                alternative_success_count += 1
+                                ticker_found = True
+                                console.print(f"[bold magenta]🔍 {original_ticker} (API Alt→MXN @ {usd_to_mxn_rate:.2f})[/bold magenta]", end=" ")
+                    
+                    except Exception as e:
+                        pass  # Continuar con el siguiente ticker
+                
+                # 3. Si nada funcionó, reportar como no encontrado
+                if not ticker_found:
+                    console.print(f"[red]❌ {original_ticker} (no encontrado)[/red]", end=" ")
+            
+            if usa_success_count > 0:
+                console.print(f"\n[bold blue]🎯 ÉXITO Yahoo Finance USA: {usa_success_count} símbolos obtenidos y convertidos a pesos mexicanos[/bold blue]")
+            
+            if alternative_success_count > 0:
+                console.print(f"\n[bold magenta]🎯 ÉXITO APIs Alternativas: {alternative_success_count} símbolos obtenidos y convertidos a pesos mexicanos[/bold magenta]")
+        
+        console.print(f"\n[bold cyan]📊 RESUMEN FINAL: {len(data)}/{len(tickers)} símbolos descargados exitosamente[/bold cyan]")
+        
+        # Mostrar resumen detallado de fuentes
+        mx_count = sum(1 for df in data.values() if df.attrs.get('source') == 'MX')
+        usa_yf_count = sum(1 for df in data.values() if df.attrs.get('source') == 'USA_YF')
+        alt_api_count = sum(1 for df in data.values() if df.attrs.get('source') == 'ALTERNATIVE_API')
+        
+        if mx_count > 0:
+            console.print(f"[green]🇲🇽 Datos mexicanos (.MX): {mx_count} símbolos - Precios en pesos mexicanos[/green]")
+        if usa_yf_count > 0:
+            console.print(f"[blue]🇺🇸 Datos Yahoo Finance USA convertidos: {usa_yf_count} símbolos - Convertidos de USD a MXN @ {usd_to_mxn_rate:.4f}[/blue]")
+        if alt_api_count > 0:
+            console.print(f"[magenta]🔍 Datos APIs alternativas convertidos: {alt_api_count} símbolos - Convertidos de USD a MXN @ {usd_to_mxn_rate:.4f}[/magenta]")
+        
+        total_converted = usa_yf_count + alt_api_count
+        if total_converted > 0:
+            console.print(f"[yellow]⚠️  NOTA: {total_converted} símbolos fueron convertidos automáticamente a pesos mexicanos desde fuentes USA[/yellow]")
+        
+    except Exception as e:
+        console.print(f"[red]Error en descarga múltiple: {e}[/red]")
+    
+    return data
+
+
+# Mantener función original para compatibilidad, pero redirigir a versión MX
+def download_prices_any_listing(ticker: str, start: str = None, end: str = None, period: str = None) -> pd.Series:
+    """
+    DEPRECATED: Usa download_prices_mx_only en su lugar
+    Mantenido para compatibilidad con código existente
+    """
+    return download_prices_mx_only(ticker, start, end, period)
 
 
 def clear_screen():
@@ -4854,13 +5370,13 @@ def suggest_technical_etf(
 'XLF', 'XLK', 'XLV']
 ):
     # Solicitar al usuario que ingrese tickers
-    input_tickers = input("Ingresa las ETFs separadas por comas (i.e FAS,VNQ,XLE): ")
+    input_tickers = input("Ingresa las ETFs separadas por comas (i.e FAS.MX,VNQ.MX,XLE.MX): ")
 
     if input_tickers.strip():  # Si se ingresaron tickers, usarlos
         tickers = [ticker.strip() for ticker in input_tickers.split(",")]
     else:
         console.print(
-            f"\n[bold yellow] No se detectó entrada, usando valores sugeridos por defecto...[/bold yellow]"
+            f"\n[bold yellow] No se detectó entrada, usando valores sugeridos por defecto (versión .MX)...[/bold yellow]"
         )
 
     resultados = []  # Para almacenar los resultados
@@ -4871,12 +5387,14 @@ def suggest_technical_etf(
     # Iterar sobre cada ticker
     for ticker in tickers:
         try:
-            # Descargar datos de los últimos 6 meses
-            df_ticker = yf.download(ticker, period="6mo")
+            # Descargar datos de los últimos 6 meses usando EXCLUSIVAMENTE ticker mexicano (.MX)
+            mx_ticker = normalize_ticker_to_mx(ticker)
+            console.print(f"[cyan]Descargando {ticker} como {mx_ticker}...[/cyan]")
+            df_ticker = yf.download(mx_ticker, period="6mo", progress=False)
             df_ticker.dropna(inplace=True)
 
             if df_ticker.empty:
-                print(f"Advertencia: No se encontraron datos para {ticker}.")
+                console.print(f"[yellow]⚠️ No se encontraron datos para {ticker} ({mx_ticker})[/yellow]")
                 continue
 
             # Asegurar Series 1D para indicadores técnicos
@@ -5026,14 +5544,31 @@ def pairs_trading_etf_leveraged():
     
     # Pares de ETFs apalancados predefinidos con alta correlación histórica
     default_pairs = [
-        ("SOXL", "TECL"),  # Semiconductores 3x vs Tecnología 3x
-        ("SPXL", "TQQQ"),  # S&P 500 3x vs NASDAQ 3x
-        ("FAS", "XLF"),    # Financieros 3x vs Financieros 1x
-        ("SOXL", "SOXX"),  # Semiconductores 3x vs Semiconductores 1x
-        ("TECL", "XLK"),   # Tecnología 3x vs Tecnología 1x
-        ("TNA", "IWM"),    # Russell 2000 3x vs Russell 2000 1x
-        ("SPXS", "SH"),    # S&P 500 -3x vs S&P 500 -1x (inversos)
-    ]
+    # --- Pares Originales (Correlación Positiva) ---
+    ("SOXL", "TECL"),  # Semiconductores 3x vs. Tecnología 3x
+    ("SPXL", "TQQQ"),  # S&P 500 3x vs. NASDAQ 100 3x
+    ("FAS", "XLF"),    # Financieros 3x vs. Financieros 1x
+    ("SOXL", "SOXX"),  # Semiconductores 3x vs. Semiconductores 1x
+    ("TECL", "XLK"),   # Tecnología 3x vs. Tecnología 1x
+    
+    # --- Pares Adicionales con Correlación Positiva (Mismo Índice/Sector) ---
+    ("SPY", "VOO"),    # S&P 500 1x (dos proveedores diferentes)
+    ("SPY", "IVV"),    # S&P 500 1x (dos proveedores diferentes)
+    ("QQQ", "TQQQ"),   # NASDAQ 100 1x vs. NASDAQ 100 3x
+    ("XLK", "VGT"),    # Tecnología 1x (dos proveedores diferentes)
+    ("GLD", "IAU"),    # Oro (dos ETFs que replican el precio del oro)
+    ("EEM", "VWO"),    # Mercados Emergentes (dos proveedores diferentes)
+    ("ACWI", "VT"),    # Mercados Globales (dos proveedores diferentes)
+    
+    # --- Pares con Correlación Inversa (Movimiento Opuesto) ---
+    ("SOXL", "SOXS"),  # Semiconductores 3x (alcista) vs. -3x (bajista)
+    ("TECL", "TECS"),  # Tecnología 3x (alcista) vs. -3x (bajista)
+    ("SPXL", "SPXS"),  # S&P 500 3x (alcista) vs. -3x (bajista)
+    ("TQQQ", "SQQQ"),  # NASDAQ 100 3x (alcista) vs. -3x (bajista)
+    ("FAS", "FAZ"),    # Financieros 3x (alcista) vs. -3x (bajista)
+    ("TNA", "TZA"),    # Russell 2000 3x (alcista) vs. -3x (bajista)
+    ("QQQ", "PSQ"),    # NASDAQ 100 1x (alcista) vs. -1x (bajista)
+]
     
     console.print("\n[bold cyan]Pares de ETFs disponibles para análisis:[/bold cyan]")
     for i, (etf1, etf2) in enumerate(default_pairs, 1):
@@ -5074,9 +5609,12 @@ def pairs_trading_etf_leveraged():
         try:
             console.print(f"\n[dim]🔍 Analizando par: {etf1} / {etf2}...[/dim]")
             
-            # Descargar datos históricos (1 año para mejor análisis estadístico)
-            df1 = yf.download(etf1, period="1y", interval="1d")
-            df2 = yf.download(etf2, period="1y", interval="1d")
+            # Descargar datos históricos (1 año para mejor análisis estadístico) usando tickers mexicanos
+            mx_etf1 = normalize_ticker_to_mx(etf1)
+            mx_etf2 = normalize_ticker_to_mx(etf2)
+            console.print(f"[dim]Descargando {etf1} ({mx_etf1}) y {etf2} ({mx_etf2})...[/dim]")
+            df1 = yf.download(mx_etf1, period="1y", interval="1d", progress=False)
+            df2 = yf.download(mx_etf2, period="1y", interval="1d", progress=False)
             
             if df1.empty or df2.empty:
                 console.print(f"[red]⚠️ No se pudieron obtener datos para {etf1} o {etf2}[/red]")
@@ -5427,10 +5965,12 @@ def volatility_based_capital_allocation():
     
     for ticker in tickers:
         try:
-            console.print(f"[dim]Procesando {ticker}...[/dim]")
+            # Usar ticker mexicano (.MX) exclusivamente
+            mx_ticker = normalize_ticker_to_mx(ticker)
+            console.print(f"[dim]Procesando {ticker} como {mx_ticker}...[/dim]")
             
-            # Descargar datos históricos (3 meses para ATR)
-            df = yf.download(ticker, period="3mo", interval="1d")
+            # Descargar datos históricos (3 meses para ATR) usando ticker mexicano
+            df = yf.download(mx_ticker, period="3mo", interval="1d", progress=False)
             df.dropna(inplace=True)
             
             if df.empty or len(df) < 20:
@@ -5634,8 +6174,9 @@ def suggest_technical_etf_leveraged(
         try:
             console.print(f"[dim]Procesando {ticker}...[/dim]")
             
-            # Descargar datos de los últimos 6 meses para análisis completo
-            df_ticker = yf.download(ticker, period="6mo", interval="1d")
+            # Descargar datos de los últimos 6 meses para análisis completo usando ticker mexicano
+            mx_ticker = normalize_ticker_to_mx(ticker)
+            df_ticker = yf.download(mx_ticker, period="6mo", interval="1d", progress=False)
             df_ticker.dropna(inplace=True)
 
             if df_ticker.empty or len(df_ticker) < 35:  # Necesitamos al menos 5 semanas de datos
@@ -5860,14 +6401,14 @@ def suggest_technical_beta1(
 ):
     # Solicitar al usuario que ingrese tickers
     input_tickers = input(
-        "Ingresa las acciones separadas por comas (i.e. OMAB,AAPL,META,MSFT): "
+        "Ingresa las acciones separadas por comas (i.e. OMAB.MX,AAPL.MX,META.MX,MSFT.MX): "
     )
 
     if input_tickers.strip():  # Si se ingresaron tickers, usarlos
         tickers = [ticker.strip() for ticker in input_tickers.split(",")]
     else:
         console.print(
-            f"\n[bold yellow] No se detectó entrada, usando valores sugeridos por defecto...[/bold yellow]"
+            f"\n[bold yellow] No se detectó entrada, usando valores sugeridos por defecto (versión .MX)...[/bold yellow]"
         )
 
     resultados = []  # Para almacenar los resultados
@@ -5878,8 +6419,10 @@ def suggest_technical_beta1(
     # Iterar sobre cada ticker
     for ticker in tickers:
         try:
-            # Descargar datos de los últimos 6 meses
-            df_ticker = yf.download(ticker, period="6mo")
+            # Descargar datos de los últimos 6 meses usando EXCLUSIVAMENTE ticker mexicano (.MX)
+            mx_ticker = normalize_ticker_to_mx(ticker)
+            console.print(f"[dim]Procesando {ticker} como {mx_ticker}...[/dim]")
+            df_ticker = yf.download(mx_ticker, period="6mo", progress=False)
             df_ticker.dropna(inplace=True)
 
             if df_ticker.empty:
@@ -7461,25 +8004,9 @@ def daily_visual_report():
     
     console.print(f"[yellow]Analizando: {category_name} - {len(symbols)} símbolos[/yellow]")
     
-    # Descargar datos
-    console.print("[cyan]📊 Descargando datos de mercado...[/cyan]")
-    data = {}
-    successful_downloads = 0
-    
-    for symbol in symbols:
-        try:
-            # Usar progress indicator más limpio
-            df = yf.download(symbol, period="3mo", interval="1d", progress=False)
-            if not df.empty:
-                data[symbol] = df
-                successful_downloads += 1
-                console.print(f"[green]✅ {symbol}[/green]", end=" ")
-            else:
-                console.print(f"[yellow]⚠️ {symbol}[/yellow]", end=" ")
-        except Exception as e:
-            console.print(f"[red]❌ {symbol}[/red]", end=" ")
-    
-    console.print(f"\n[cyan]Descargados exitosamente: {successful_downloads}/{len(symbols)}[/cyan]")
+    # Descargar datos usando EXCLUSIVAMENTE tickers mexicanos (.MX)
+    console.print("[cyan]📊 Descargando datos de mercado (SOLO versión .MX)...[/cyan]")
+    data = download_multiple_mx_tickers(symbols, period="3mo", progress=False)
     
     if not data:
         console.print("[bold red]❌ No se pudieron descargar datos. Abortando...[/bold red]")
@@ -7527,6 +8054,22 @@ def process_market_data_visual(data):
             if len(df) < 60:
                 console.print(f"[yellow]⚠️ Datos insuficientes para {symbol}[/yellow]")
                 continue
+            
+            # Obtener información de moneda y fuente
+            currency = getattr(df, 'attrs', {}).get('currency', 'MXN')
+            source = getattr(df, 'attrs', {}).get('source', 'MX')
+            exchange_rate = getattr(df, 'attrs', {}).get('exchange_rate', None)
+            converted_from_usd = getattr(df, 'attrs', {}).get('converted_from_usd', False)
+            
+            # Determinar fuente legible para el usuario
+            if source == 'MX':
+                source_display = 'Mercado Mexicano (.MX)'
+            elif source == 'USA_YF':
+                source_display = f'Yahoo Finance USA (convertido @ {exchange_rate:.4f})' if exchange_rate else 'Yahoo Finance USA'
+            elif source == 'ALTERNATIVE_API':
+                source_display = f'API Alternativa (convertido @ {exchange_rate:.4f})' if exchange_rate else 'API Alternativa'
+            else:
+                source_display = 'Fuente desconocida'
             
             # Normalizar columnas a Series 1D
             close = df['Close']
@@ -7674,6 +8217,12 @@ def process_market_data_visual(data):
                 'buy_signal': buy_signal,
                 'sell_signal': sell_signal,
                 'squeeze_alert': squeeze_alert,
+                
+                # Información de fuente y conversión de divisas
+                'currency': currency,
+                'source': source,
+                'exchange_rate': exchange_rate,
+                'converted_from_usd': converted_from_usd,
                 
                 # Compatibilidad con código anterior
                 'cambio_1d': momentum_1d,
@@ -7869,9 +8418,54 @@ def generate_html_dashboard_visual(analysis_data, symbols, category_name):
     sell_signals = [symbol for symbol, data in analysis_data.items() if data.get('sell_signal', False)]
     squeeze_alerts = [symbol for symbol, data in analysis_data.items() if data.get('squeeze_alert', False)]
     
+    # Información sobre conversión de divisas
+    mx_symbols = [symbol for symbol, data in analysis_data.items() if data.get('source') == 'MX']
+    usa_yf_symbols = [symbol for symbol, data in analysis_data.items() if data.get('source') == 'USA_YF']
+    alt_api_symbols = [symbol for symbol, data in analysis_data.items() if data.get('source') == 'ALTERNATIVE_API']
+    all_converted_symbols = usa_yf_symbols + alt_api_symbols
+    
+    # Para compatibilidad con código existente
+    usa_symbols = all_converted_symbols
+    
     buy_ops = ', '.join(buy_signals[:5]) if buy_signals else "Ninguna detectada"
     sell_ops = ', '.join(sell_signals[:5]) if sell_signals else "Ninguna detectada"
     squeeze_ops = ', '.join(squeeze_alerts[:5]) if squeeze_alerts else "Ninguna detectada"
+    
+    # Información de fuentes de datos
+    mx_count = len(mx_symbols)
+    usa_count = len(usa_symbols)
+    exchange_rate = None
+    if usa_symbols:
+        # Obtener el tipo de cambio del primer símbolo convertido
+        for symbol in usa_symbols:
+            if analysis_data[symbol].get('exchange_rate'):
+                exchange_rate = analysis_data[symbol]['exchange_rate']
+                break
+    
+    # Generar información de conversión de divisas
+    usa_conversion_info = ""
+    
+    if len(all_converted_symbols) > 0:
+        # Obtener el tipo de cambio del primer símbolo convertido
+        exchange_rate = None
+        for symbol in all_converted_symbols:
+            if analysis_data[symbol].get('exchange_rate'):
+                exchange_rate = analysis_data[symbol]['exchange_rate']
+                break
+        
+        if exchange_rate:
+            usa_conversion_info += f"""<p><strong>🇺🇸 Datos USA Convertidos:</strong> {len(usa_yf_symbols)} símbolos desde Yahoo Finance USA - Convertidos de USD a MXN @ {exchange_rate:.4f}</p>"""
+            
+            if len(alt_api_symbols) > 0:
+                usa_conversion_info += f"""<p><strong>🔍 Datos APIs Alternativas:</strong> {len(alt_api_symbols)} símbolos desde fuentes alternativas - Convertidos de USD a MXN @ {exchange_rate:.4f}</p>"""
+            
+            # Mostrar algunos ejemplos de símbolos convertidos
+            example_symbols = all_converted_symbols[:5]
+            usa_conversion_info += f"""<p><strong>⚠️ IMPORTANTE:</strong> Los símbolos {', '.join(example_symbols)}{'...' if len(all_converted_symbols) > 5 else ''} fueron obtenidos desde mercados USA y convertidos automáticamente a pesos mexicanos</p>"""
+            
+            # Información adicional sobre fuentes alternativas
+            if len(alt_api_symbols) > 0:
+                usa_conversion_info += f"""<p><strong>🔍 FUENTES ALTERNATIVAS:</strong> Se utilizaron APIs como Alpha Vantage, Polygon.io, IEX Cloud o Financial Modeling Prep para obtener datos cuando Yahoo Finance no los tenía disponibles</p>"""
     
     # HTML completo
     html_template = f"""
@@ -8020,6 +8614,16 @@ def generate_html_dashboard_visual(analysis_data, symbols, category_name):
                     <p><strong>🔴 Señales de Venta:</strong> {sell_ops}</p>
                     <p><strong>⚡ Alertas de Squeeze:</strong> {squeeze_ops}</p>
                     <p><strong>📊 Total de Instrumentos Analizados:</strong> {len(analysis_data)}</p>
+                </div>
+            </div>
+            
+            <!-- INFORMACIÓN DE FUENTES DE DATOS -->
+            <div class="legend" style="border-left: 4px solid #007bff;">
+                <h3>💱 Información de Fuentes de Datos:</h3>
+                <div class="data-sources-grid">
+                    <p><strong>🇲🇽 Datos Mexicanos (.MX):</strong> {mx_count} símbolos - Precios en pesos mexicanos</p>
+                    {usa_conversion_info}
+                    <p><strong>💡 Nota:</strong> Todos los precios están expresados en pesos mexicanos (MXN) para facilitar la comparación</p>
                 </div>
             </div>
             
