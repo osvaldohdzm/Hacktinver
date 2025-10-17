@@ -39,6 +39,7 @@ import yfinance as yf
 import schedule
 import pdfkit
 import seaborn as sns
+from retrying import retry
 # Reduce noisy yfinance logs (HTTP 404 spam). We'll report our own concise status.
 try:
     logging.getLogger("yfinance").setLevel(logging.CRITICAL)
@@ -81,6 +82,14 @@ except Exception:
     logging.getLogger("ractinver").warning(
         "PyPortfolioOpt no disponible. Algunas funciones de optimización estarán deshabilitadas."
     )
+# Prueba de importación del ADF; requerido para cointegración/estacionariedad en pairs trading
+try:
+    from statsmodels.tsa.stattools import adfuller
+except Exception:
+    adfuller = None  # Será validado en tiempo de ejecución donde se use
+    logging.getLogger("ractinver").warning(
+        "statsmodels no disponible. Instala con 'pip install statsmodels' para habilitar pruebas ADF."
+    )
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.chrome.options import Options
@@ -113,7 +122,20 @@ from platform import system
 if system() == 'Windows':
     from msvcrt import getch
 else:
-    from getch import getch
+    try:
+        from getch import getch
+    except ImportError:
+        # Fallback para sistemas sin getch
+        def getch():
+            import sys, tty, termios
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            try:
+                tty.setraw(sys.stdin.fileno())
+                ch = sys.stdin.read(1)
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            return ch
 
 # Crear un evento para detener el hilo si es necesario
 stop_event = threading.Event()
@@ -175,6 +197,79 @@ cost_per_operation = (comision_per_operation) + (
 )
 dn = os.path.dirname(os.path.realpath(__file__))
 
+
+
+
+def normalize_ticker_to_mx(ticker: str) -> str:
+    """
+    Normaliza cualquier ticker para usar SIEMPRE la versión mexicana (.MX)
+    Maneja casos: SOXL, SOXL.MX, SOXL.mx, soxl.mx -> SOXL.MX
+    Evita duplicaciones como .MX.MX
+    """
+    if not ticker:
+        return ""
+
+    # Mapa de alias/normalizaciones para tickers MX y nombres frecuentes del reto
+    # Clave sin sufijo; valor con sufijo .MX
+    MX_ALIAS_MAP = {
+        # Ejemplos de alias corporativos vs. Yahoo
+        "ALFA": "ALFAA.MX",
+        "BIMBO": "BIMBOA.MX",
+        "CEMEX": "CEMEXCPO.MX",
+        "GMEXICO": "GMEXICOB.MX",
+        "PE&OLES": "PE&OLES.MX",
+        "BOLSA": "BOLSAA.MX",
+        "LAB": "LABB.MX",
+        "KIMBER": "KIMBERA.MX",  # común en BMV
+        "LIVEPOL": "LIVEPOLC-1.MX",
+        "TLEVISA": "TLEVISACPO.MX",
+        "WALMEX": "WALMEX.MX",
+        "FEMSA": "FEMSAUBD.MX",
+        # Variantes 1 vs sin sufijo
+        "OXY1": "OXY.MX",
+        "CPE": "CPE.MX",
+        # ETFs locales comunes
+        "NAFTRAC": "NAFTRAC.MX",
+    }
+
+    # Instrumentos de casa Actinver que no existen en Yahoo (omitir para evitar 404)
+    ACTINVER_HOUSE_INSTRUMENTS = {
+        "ACTI500", "ACTICRE", "ACTICOB", "ACTDUAL", "ACTIREN", "ACTIMED",
+        "ACTIGOB", "ACTIG+", "ACTIG+2", "ACTIVAR", "ACTIPLU", "DIGITAL",
+        "ESFERA", "ESCALA", "DINAMO", "MAYA", "MAXIMO", "SALUD", "ROBOTIK",
+        "OPORT1"
+    }
+
+    # Limpiar y convertir a mayúsculas
+    raw = ticker.strip()
+    t = raw.upper()
+
+    # Si viene ya con .MX exacto, devolverlo tal cual
+    if t.endswith(".MX"):
+        return t
+
+    # Quitar sufijo .mx en minúscula
+    if t.endswith(".mx"):
+        t = t[:-3]
+
+    base = t
+
+    # Si ya viene con un sufijo como .B o .C, preferimos alias si existe, si no agregamos .MX
+    if "." in base:
+        symbol = base.split(".")[0]
+    else:
+        symbol = base
+
+    # Si es instrumento de casa Actinver, devolver marcador especial para omitir
+    if symbol in ACTINVER_HOUSE_INSTRUMENTS:
+        return "__SKIP_ACTINVER__"
+
+    # Resolver alias conocidos
+    if symbol in MX_ALIAS_MAP:
+        return MX_ALIAS_MAP[symbol]
+
+    # Por defecto, agregar .MX
+    return f"{symbol}.MX"
 
 def _redact_sensitive(value: str) -> str:
     if not isinstance(value, str):
@@ -251,77 +346,6 @@ def _pick_price_series(df: pd.DataFrame) -> pd.Series:
         s = s.iloc[:, 0]
     return s
 
-
-def normalize_ticker_to_mx(ticker: str) -> str:
-    """
-    Normaliza cualquier ticker para usar SIEMPRE la versión mexicana (.MX)
-    Maneja casos: SOXL, SOXL.MX, SOXL.mx, soxl.mx -> SOXL.MX
-    Evita duplicaciones como .MX.MX
-    """
-    if not ticker:
-        return ""
-
-    # Mapa de alias/normalizaciones para tickers MX y nombres frecuentes del reto
-    # Clave sin sufijo; valor con sufijo .MX
-    MX_ALIAS_MAP = {
-        # Ejemplos de alias corporativos vs. Yahoo
-        "ALFA": "ALFAA.MX",
-        "BIMBO": "BIMBOA.MX",
-        "CEMEX": "CEMEXCPO.MX",
-        "GMEXICO": "GMEXICOB.MX",
-        "PE&OLES": "PE&OLES.MX",
-        "BOLSA": "BOLSAA.MX",
-        "LAB": "LABB.MX",
-        "KIMBER": "KIMBERA.MX",  # común en BMV
-        "LIVEPOL": "LIVEPOLC-1.MX",
-        "TLEVISA": "TLEVISACPO.MX",
-        "WALMEX": "WALMEX.MX",
-        "FEMSA": "FEMSAUBD.MX",
-        # Variantes 1 vs sin sufijo
-        "OXY1": "OXY.MX",
-        "CPE": "CPE.MX",
-        # ETFs locales comunes
-        "NAFTRAC": "NAFTRAC.MX",
-    }
-
-    # Instrumentos de casa Actinver que no existen en Yahoo (omitir para evitar 404)
-    ACTINVER_HOUSE_INSTRUMENTS = {
-        "ACTI500", "ACTICRE", "ACTICOB", "ACTDUAL", "ACTIREN", "ACTIMED",
-        "ACTIGOB", "ACTIG+", "ACTIG+2", "ACTIVAR", "ACTIPLU", "DIGITAL",
-        "ESFERA", "ESCALA", "DINAMO", "MAYA", "MAXIMO", "SALUD", "ROBOTIK",
-        "OPORT1"
-    }
-
-    # Limpiar y convertir a mayúsculas
-    raw = ticker.strip()
-    t = raw.upper()
-
-    # Si viene ya con .MX exacto, devolverlo tal cual
-    if t.endswith(".MX"):
-        return t
-
-    # Quitar sufijo .mx en minúscula
-    if t.endswith(".mx"):
-        t = t[:-3]
-
-    base = t
-
-    # Si ya viene con un sufijo como .B o .C, preferimos alias si existe, si no agregamos .MX
-    if "." in base:
-        symbol = base.split(".")[0]
-    else:
-        symbol = base
-
-    # Si es instrumento de casa Actinver, devolver marcador especial para omitir
-    if symbol in ACTINVER_HOUSE_INSTRUMENTS:
-        return "__SKIP_ACTINVER__"
-
-    # Resolver alias conocidos
-    if symbol in MX_ALIAS_MAP:
-        return MX_ALIAS_MAP[symbol]
-
-    # Por defecto, agregar .MX
-    return f"{symbol}.MX"
 
 
 def download_prices_mx_only(ticker: str, start: str = None, end: str = None, period: str = None, progress: bool = False) -> pd.Series:
@@ -5363,14 +5387,36 @@ def suggest_technical_soon_results():
 
 
 
-def suggest_technical_etf(
+
+def suggest_enhanced_etf_strategy(
     tickers=['AAXJ', 'ACWI', 'BIL', 'BOTZ', 'DIA', 'EEM', 'EWZ', 'GDX', 'GLD', 'IAU', 'ICLN', 'INDA', 
 'IVV', 'KWEB', 'LIT', 'MCHI', 'PSQ', 'QCLN', 'QQQ', 'SHV', 'SHY', 'SLV', 'SOXX', 'SPLG', 
 'SPY', 'TAN', 'TLT', 'USO', 'VEA', 'VGT', 'VNQ', 'VOO', 'VT', 'VTI', 'VWO', 'VYM', 'XLE', 
 'XLF', 'XLK', 'XLV']
 ):
-    # Solicitar al usuario que ingrese tickers
+    """
+    Análisis técnico rápido usando BANDAS DE BOLLINGER como indicador principal
+    Estrategia de reversión a la media para swing trading con ETFs
+    """
+    # Solicitar al usuario que ingrese tickers (con soporte de comandos estilo vim)
     input_tickers = input("Ingresa las ETFs separadas por comas (i.e FAS.MX,VNQ.MX,XLE.MX): ")
+    cmd = input_tickers.strip()
+    if cmd.startswith(":"):
+        cmd_lower = cmd[1:].strip().lower()
+        if cmd_lower in ("q", "quit"):
+            exit_program(); return
+        if cmd_lower in ("b", "back"):
+            return
+        if cmd_lower.isdigit():
+            try:
+                idx = int(cmd_lower) - 1
+                # Volver al menú principal y ejecutar opción
+                from rich.prompt import Prompt
+                console.print(f"[yellow]Saltando a opción {idx+1} del menú...[/yellow]")
+                # Hacer que main maneje este salto mediante excepción controlada
+                raise SystemExit(f"__GOTO_MENU_OPTION__:{idx}")
+            except Exception:
+                return
 
     if input_tickers.strip():  # Si se ingresaron tickers, usarlos
         tickers = [ticker.strip() for ticker in input_tickers.split(",")]
@@ -5378,6 +5424,8 @@ def suggest_technical_etf(
         console.print(
             f"\n[bold yellow] No se detectó entrada, usando valores sugeridos por defecto (versión .MX)...[/bold yellow]"
         )
+
+    console.print("[bold blue]📈 Análisis Técnico con Bandas de Bollinger - Estrategia de Reversión a la Media[/bold blue]")
 
     resultados = []  # Para almacenar los resultados
     etf_comprar = []  # Para las ETFs recomendadas para comprar
@@ -5408,98 +5456,148 @@ def suggest_technical_etf(
             if isinstance(low, pd.DataFrame):
                 low = low.iloc[:, 0]
 
-            # Calcular indicadores técnicos
-            rsi = RSIIndicator(close, window=14).rsi()
-            stochastic = StochasticOscillator(
-                high,
-                low,
-                close,
-                window=14,
-                smooth_window=3,
-            )
-            macd = MACD(close).macd_diff()
-            bollinger = BollingerBands(close)
+            # 🚀 OPTIMIZACIÓN PARA CONCURSO: Parámetros más agresivos para 5 semanas
+            bollinger = BollingerBands(close, window=15, window_dev=1.8)  # MÁS SENSIBLE
+            bb_upper = bollinger.bollinger_hband()
+            bb_middle = bollinger.bollinger_mavg()  # Media móvil (SMA 15)
+            bb_lower = bollinger.bollinger_lband()
             
-            # Filtro de tendencia: Media móvil de 50 días
-            sma_50 = SMAIndicator(close, window=50).sma_indicator()
+            # Indicadores de apoyo optimizados para concurso
+            rsi = RSIIndicator(close, window=9).rsi()  # RSI MÁS RÁPIDO
+            sma_50 = SMAIndicator(close, window=20).sma_indicator()  # SMA MÁS CORTO
+            
+            # 🔥 NUEVO: Filtro de volatilidad (ATR) - ESENCIAL PARA CONCURSO
+            from ta.volatility import AverageTrueRange
+            atr = AverageTrueRange(high, low, close, window=14).average_true_range()
+            atr_actual = float(atr.iloc[-1])
+            atr_media = float(atr.mean())
+            volatil_alto = atr_actual > atr_media * 1.2  # Solo ETFs con volatilidad alta
 
-            # Obtener datos recientes (usar Series 1D ya normalizadas)
-            rsi_actual = float(rsi.iloc[-1])
-            stochastic_actual = float(stochastic.stoch().iloc[-1])
-            macd_actual = float(macd.iloc[-1])
+            # Obtener datos recientes
             close_hoy = float(close.iloc[-1])
             close_ayer = float(close.iloc[-2])
-            bollinger_high = float(bollinger.bollinger_hband().iloc[-1])
-            bollinger_low = float(bollinger.bollinger_lband().iloc[-1])
+            bb_upper_actual = float(bb_upper.iloc[-1])
+            bb_middle_actual = float(bb_middle.iloc[-1])
+            bb_lower_actual = float(bb_lower.iloc[-1])
+            rsi_actual = float(rsi.iloc[-1])
             sma_50_actual = float(sma_50.iloc[-1])
 
-            # Calcular la variación diaria
+            # Calcular posición dentro de las bandas (0 = banda inferior, 1 = banda superior)
+            bb_position = (close_hoy - bb_lower_actual) / (bb_upper_actual - bb_lower_actual)
+            
+            # Calcular variación diaria
             variacion_diaria = (close_hoy - close_ayer) / close_ayer * 100
 
-            # Filtro de tendencia para evitar "atrapar un cuchillo cayendo"
-            precio_sobre_sma50 = close_hoy > sma_50_actual
-            precio_bajo_sma50 = close_hoy < sma_50_actual
+            # Detectar toques de bandas en los últimos 3 días
+            toque_banda_inferior = any(close.tail(3) <= bb_lower.tail(3) * 1.01)  # 1% tolerancia
+            toque_banda_superior = any(close.tail(3) >= bb_upper.tail(3) * 0.99)  # 1% tolerancia
 
-            # Condiciones de compra mejoradas con filtro de tendencia
+            # 🚀 LÓGICA ULTRA-OPTIMIZADA PARA CONCURSO (5 SEMANAS)
+            
+            # 🔥 SEÑALES DE COMPRA ULTRA-OPTIMIZADAS
             condiciones_compra = (
-                precio_sobre_sma50 and  # Solo comprar si está en tendencia alcista
-                (
-                    # Condición principal: Sobreventa clara en ambos indicadores
-                    (rsi_actual < 35 and stochastic_actual < 20)
-                    or
-                    # Condición alternativa: Movimiento extremo con ruptura de Bollinger inferior
-                    (close_hoy < bollinger_low and variacion_diaria < -2.0)
-                )
+                # 🔥 COMPRA FUERTE: Toque banda inf + RSI <30
+                (close_hoy <= bb_lower_actual * 1.01 and rsi_actual < 30) or
+                # 🔥 COMPRA MEDIA: Posición BB <0.2 + rebote + volumen
+                (bb_position < 0.20 and close_hoy > close_ayer and rsi_actual < 40) or
+                # 🔥 COMPRA DÉBIL: Divergencia RSI + tendencia alcista
+                (rsi_actual < 35 and tendencia_alcista and bb_position < 0.4)
             )
 
-            # Condiciones de venta mejoradas con filtro de tendencia
+            # 🔥 SEÑALES DE VENTA ULTRA-OPTIMIZADAS   
             condiciones_venta = (
-                precio_bajo_sma50 and  # Solo vender si está en tendencia bajista
-                (
-                    # Condición principal: Sobrecompra en ambos indicadores
-                    (rsi_actual > 65 and stochastic_actual > 80)
-                    or
-                    # Condición alternativa: Ruptura extrema de Bollinger superior
-                    (close_hoy > bollinger_high and variacion_diaria > 2.0)
-                )
+                # 🔥 VENTA FUERTE: Toque banda sup + RSI >70
+                (close_hoy >= bb_upper_actual * 0.99 and rsi_actual > 70) or
+                # 🔥 VENTA MEDIA: Posición BB >0.8 + rechazo
+                (bb_position > 0.80 and close_hoy < close_ayer and rsi_actual > 60) or
+                # 🔥 VENTA DÉBIL: RSI >65 + tendencia bajista
+                (rsi_actual > 65 and tendencia_bajista and bb_position > 0.6)
             )
 
-            # Determinar la acción recomendada
-            if condiciones_compra:
+            # Filtro de tendencia general (SMA 50)
+            tendencia_alcista = close_hoy > sma_50_actual
+            tendencia_bajista = close_hoy < sma_50_actual
+
+            # 🚀 AJUSTAR SEÑALES CON FILTRO DE VOLATILIDAD (CRÍTICO PARA CONCURSO)
+            if condiciones_compra and volatil_alto and not tendencia_bajista:
                 accion_recomendacion = "Comprar"
                 etf_comprar.append(ticker)
-            elif condiciones_venta:
+                # 🔥 Confianza ajustada para concurso
+                if rsi_actual < 30:
+                    confianza = 95
+                elif bb_position < 0.20:
+                    confianza = 85
+                else:
+                    confianza = 70
+            elif condiciones_venta and volatil_alto and not tendencia_alcista:
                 accion_recomendacion = "Vender"
                 etf_vender.append(ticker)
+                # 🔥 Confianza ajustada para concurso
+                if rsi_actual > 70:
+                    confianza = 95
+                elif bb_position > 0.80:
+                    confianza = 85
+                else:
+                    confianza = 70
             else:
                 accion_recomendacion = "Esperar"
                 etf_mantener.append(ticker)
+                confianza = 50
+
+            # 🚀 GESTIÓN DE RIESGO PARA CONCURSO (MÁS APRETADA)
+            if accion_recomendacion == "Comprar":
+                stop_loss = bb_lower_actual * 0.995  # MÁS APRETADO (0.5%)
+                take_profit = bb_upper_actual * 0.98  # OBJETIVO AMBICIOSO (banda superior)
+                ratio_risk_reward = (take_profit - close_hoy) / (close_hoy - stop_loss)
+            elif accion_recomendacion == "Vender":
+                stop_loss = bb_upper_actual * 1.005
+                take_profit = bb_lower_actual * 1.02
+                ratio_risk_reward = (close_hoy - take_profit) / (stop_loss - close_hoy)
+            else:
+                stop_loss = close_hoy * 0.95
+                take_profit = close_hoy * 1.05
+                ratio_risk_reward = 1.0
+            
+            # 🔥 SOLO OPERAR SI RATIO RISK/REWARD >= 2.0
+            if accion_recomendacion != "Esperar" and ratio_risk_reward < 2.0:
+                accion_recomendacion = "Esperar"
+                if ticker in etf_comprar:
+                    etf_comprar.remove(ticker)
+                if ticker in etf_vender:
+                    etf_vender.remove(ticker)
+                etf_mantener.append(ticker)
+                confianza = 40  # Baja confianza por mal ratio
 
             # Almacenar los resultados
             resultados.append(
                 {
                     "Ticker": ticker,
                     "Precio": close_hoy,
-                    "SMA50": sma_50_actual,
-                    "Tendencia": "Alcista" if precio_sobre_sma50 else "Bajista",
-                    "RSI": rsi_actual,
-                    "Stochastic": stochastic_actual,
-                    "MACD": macd_actual,
-                    "Bollinger_High": bollinger_high,
-                    "Bollinger_Low": bollinger_low,
-                    "Variación (%)": variacion_diaria,
+                    "BB_Superior": bb_upper_actual,
+                    "BB_Media": bb_middle_actual,
+                    "BB_Inferior": bb_lower_actual,
+                    "Posición_BB": round(bb_position, 3),
+                    "RSI": round(rsi_actual, 1),
+                    "SMA50": round(sma_50_actual, 2),
+                    "Tendencia": "Alcista" if tendencia_alcista else "Bajista",
+                    "Variación (%)": round(variacion_diaria, 2),
                     "Acción Recomendada": accion_recomendacion,
+                    "Confianza (%)": confianza,
+                    "Stop_Loss": round(stop_loss, 2),
+                    "Take_Profit": round(take_profit, 2),
+                    "Toque_Inf": "Sí" if toque_banda_inferior else "No",
+                    "Toque_Sup": "Sí" if toque_banda_superior else "No"
                 }
             )
 
         except Exception as e:
-            print(f"Error con {ticker}: {e}")
+            console.print(f"[red]Error con {ticker}: {e}[/red]")
             continue
 
     # Crear un DataFrame a partir de los resultados
     df_resultados = pd.DataFrame(resultados)
     os.makedirs('data', exist_ok=True)    
-    csv_file_path = f'data/suggest_technical_etf_{datetime.now():%Y%m%d_%H%M%S}.csv'
+    csv_file_path = f'data/suggest_enhanced_etf_strategy_{datetime.now():%Y%m%d_%H%M%S}.csv'
     df_resultados.to_csv(csv_file_path, index=False)
 
     # Imprimir la tabla de resultados
@@ -5521,27 +5619,19 @@ def suggest_technical_etf(
 def pairs_trading_etf_leveraged():
     """
     Algoritmo Pairs Trading Mejorado con ETFs Apalancados
-    Estrategia de mercado neutral con test de cointegración, gestión de riesgo avanzada
-    y dimensionamiento de posiciones para maximizar la probabilidad de éxito.
-    
-    Mejoras implementadas:
-    - Test de cointegración (ADF)
-    - Lógica de salida y stop-loss
-    - Optimización de ventana temporal
-    - Dimensionamiento de posición neutral
-    - Cálculo de half-life de reversión
+    Estrategia de mercado neutral optimizada para un concurso de corto plazo (4 semanas).
     """
-    console.print("[bold blue]🔄 Pairs Trading Avanzado con ETFs Apalancados[/bold blue]")
-    console.print("[yellow]Estrategia cuantitativa de mercado neutral con validación estadística[/yellow]")
-    
-    # Importar statsmodels para test de cointegración
-    try:
-        from statsmodels.tsa.stattools import adfuller
-        console.print("[green]✅ Módulo statsmodels cargado correctamente[/green]")
-    except ImportError:
-        console.print("[bold red]❌ Error: statsmodels no está instalado. Ejecuta: pip install statsmodels[/bold red]")
-        return
-    
+    console.print("\n[bold blue]🔄 Pairs Trading Optimizado para Concurso (Corto Plazo)[/bold blue]")
+    console.print("[yellow]Estrategia cuantitativa de mercado neutral con enfoque en velocidad de reversión[/yellow]")
+
+    # =================================================================================
+    # --- PARÁMETROS CLAVE DE LA ESTRATEGIA (AJUSTA AQUÍ) ---
+    # =================================================================================
+    Z_SCORE_ENTRADA = 1.9  # Umbral de Z-Score para considerar una entrada (más agresivo que 2.0)
+    MAX_HALF_LIFE = 15     # Máximo de días para que el par revierta (CRUCIAL para concurso)
+    PERIODO_DATOS = "6mo"  # Ventana de datos históricos ("1y", "6mo", "3mo")
+    # =================================================================================
+
     # Pares de ETFs apalancados predefinidos con alta correlación histórica
     default_pairs = [
     # --- Pares Originales (Correlación Positiva) ---
@@ -5550,8 +5640,6 @@ def pairs_trading_etf_leveraged():
     ("FAS", "XLF"),    # Financieros 3x vs. Financieros 1x
     ("SOXL", "SOXX"),  # Semiconductores 3x vs. Semiconductores 1x
     ("TECL", "XLK"),   # Tecnología 3x vs. Tecnología 1x
-    
-    # --- Pares Adicionales con Correlación Positiva (Mismo Índice/Sector) ---
     ("SPY", "VOO"),    # S&P 500 1x (dos proveedores diferentes)
     ("SPY", "IVV"),    # S&P 500 1x (dos proveedores diferentes)
     ("QQQ", "TQQQ"),   # NASDAQ 100 1x vs. NASDAQ 100 3x
@@ -5560,7 +5648,7 @@ def pairs_trading_etf_leveraged():
     ("EEM", "VWO"),    # Mercados Emergentes (dos proveedores diferentes)
     ("ACWI", "VT"),    # Mercados Globales (dos proveedores diferentes)
     
-    # --- Pares con Correlación Inversa (Movimiento Opuesto) ---
+    # --- Pares Originales con Correlación Inversa ---
     ("SOXL", "SOXS"),  # Semiconductores 3x (alcista) vs. -3x (bajista)
     ("TECL", "TECS"),  # Tecnología 3x (alcista) vs. -3x (bajista)
     ("SPXL", "SPXS"),  # S&P 500 3x (alcista) vs. -3x (bajista)
@@ -5568,26 +5656,32 @@ def pairs_trading_etf_leveraged():
     ("FAS", "FAZ"),    # Financieros 3x (alcista) vs. -3x (bajista)
     ("TNA", "TZA"),    # Russell 2000 3x (alcista) vs. -3x (bajista)
     ("QQQ", "PSQ"),    # NASDAQ 100 1x (alcista) vs. -1x (bajista)
+    
+    # --- Nuevos Pares con Correlación Positiva ---
+    ("VTI", "VOO"),    # Mercado total vs. S&P 500
+    ("IVV", "SPLG"),   # S&P 500 (dos proveedores diferentes)
+    ("XLE", "OXY1"),   # ETF de energía vs. Occidental Petroleum
+    ("VNQ", "FUNO"),   # ETF de bienes raíces vs. fideicomiso inmobiliario
+    ("MCHI", "KWEB"),  # China mercado general vs. China tecnología
+    
+    # --- Nuevos Pares con Correlación Inversa ---
+    ("QLD", "SQQQ"),   # NASDAQ 100 2x (alcista) vs. -3x (bajista)
+    ("TQQQ", "PSQ"),   # NASDAQ 100 3x (alcista) vs. -1x (bajista)
 ]
     
     console.print("\n[bold cyan]Pares de ETFs disponibles para análisis:[/bold cyan]")
     for i, (etf1, etf2) in enumerate(default_pairs, 1):
-        console.print(f"  {i}. {etf1} / {etf2}")
+        console.print(f"   {i}. {etf1} / {etf2}")
     
     # Parámetros de configuración
     try:
-        selection = input("\nSelecciona el número del par (1-7) o presiona Enter para analizar todos: ")
+        selection = input(f"\nSelecciona el número del par (1-{len(default_pairs)}) o presiona Enter para analizar todos: ")
         if selection.strip():
             pair_index = int(selection) - 1
-            if 0 <= pair_index < len(default_pairs):
-                pairs_to_analyze = [default_pairs[pair_index]]
-            else:
-                console.print("[red]Selección inválida, analizando todos los pares[/red]")
-                pairs_to_analyze = default_pairs
+            pairs_to_analyze = [default_pairs[pair_index]] if 0 <= pair_index < len(default_pairs) else default_pairs
         else:
             pairs_to_analyze = default_pairs
             
-        # Parámetros de gestión de riesgo
         monto_por_pata = float(input("Monto por cada lado de la operación (default: 400000): ") or "400000")
         lookback_window = int(input("Ventana de análisis en días (default: 30): ") or "30")
         
@@ -5600,7 +5694,9 @@ def pairs_trading_etf_leveraged():
     console.print(f"\n[bold cyan]Configuración del análisis:[/bold cyan]")
     console.print(f"• Monto por operación: ${monto_por_pata:,.0f} por lado")
     console.print(f"• Ventana de análisis: {lookback_window} días")
-    console.print(f"• Pares a analizar: {len(pairs_to_analyze)}")
+    console.print(f"• Periodo histórico: {PERIODO_DATOS}")
+    console.print(f"[bold red]• Umbral de Entrada (Z-Score): > {Z_SCORE_ENTRADA}[/bold red]")
+    console.print(f"[bold green]• Half-Life Máximo: < {MAX_HALF_LIFE} días[/bold green]")
     
     results = []
     cointegrated_pairs = 0
@@ -5609,196 +5705,237 @@ def pairs_trading_etf_leveraged():
         try:
             console.print(f"\n[dim]🔍 Analizando par: {etf1} / {etf2}...[/dim]")
             
-            # Descargar datos históricos (1 año para mejor análisis estadístico) usando tickers mexicanos
-            mx_etf1 = normalize_ticker_to_mx(etf1)
-            mx_etf2 = normalize_ticker_to_mx(etf2)
-            console.print(f"[dim]Descargando {etf1} ({mx_etf1}) y {etf2} ({mx_etf2})...[/dim]")
-            df1 = yf.download(mx_etf1, period="1y", interval="1d", progress=False)
-            df2 = yf.download(mx_etf2, period="1y", interval="1d", progress=False)
+            # Descargar datos históricos (periodo ajustado para concurso) prefiriendo MX; si no hay, usar US y convertir a MXN
+            def _download_close_with_fallback(symbol_original: str, period: str) -> pd.Series:
+                symbol_mx = normalize_ticker_to_mx(symbol_original)
+                if symbol_mx == "__SKIP_ACTINVER__":
+                    return pd.Series(dtype=float)
+                # Intento 1: versión MX (ya en MXN)
+                try:
+                    df_mx = yf.download(symbol_mx, period=period, interval="1d", progress=False)
+                except Exception:
+                    df_mx = pd.DataFrame()
+                if not df_mx.empty and "Close" in df_mx and not df_mx["Close"].dropna().empty:
+                    s = df_mx["Close"].dropna().copy()
+                    try:
+                        s.index = pd.to_datetime(s.index).tz_localize(None).normalize()
+                    except Exception:
+                        s.index = pd.to_datetime(s.index).normalize()
+                    return s
+                # Intento 2: versión US (USD) -> convertir a MXN con tipo de cambio actual
+                try:
+                    t = yf.Ticker(symbol_original)
+                    h = t.history(period=period, interval="1d", auto_adjust=True, actions=False)
+                except Exception:
+                    h = pd.DataFrame()
+                if not h.empty and "Close" in h and not h["Close"].dropna().empty:
+                    s = h["Close"].dropna().copy()
+                    try:
+                        s.index = pd.to_datetime(s.index).tz_localize(None).normalize()
+                    except Exception:
+                        s.index = pd.to_datetime(s.index).normalize()
+                    try:
+                        usd_mxn = float(get_usd_to_mxn_rate())
+                        s = s * usd_mxn
+                        console.print(f"[yellow]ℹ️ Usando ticker US para {symbol_original} y convirtiendo a MXN (TC={usd_mxn:.4f}).[/yellow]")
+                    except Exception:
+                        console.print("[yellow]⚠️ No se pudo obtener tipo de cambio. Usando USD sin convertir.[/yellow]")
+                    return s
+                return pd.Series(dtype=float)
+
+            close1 = _download_close_with_fallback(etf1, PERIODO_DATOS)
+            close2 = _download_close_with_fallback(etf2, PERIODO_DATOS)
             
-            if df1.empty or df2.empty:
+            if close1.empty or close2.empty:
                 console.print(f"[red]⚠️ No se pudieron obtener datos para {etf1} o {etf2}[/red]")
                 continue
             
-            # Obtener precios de cierre y alinear fechas
-            close1 = df1["Close"]
-            close2 = df2["Close"]
+            # Alineación de datos (asegurar índices normalizados a fecha)
+            try:
+                close1.index = pd.to_datetime(close1.index).tz_localize(None).normalize()
+                close2.index = pd.to_datetime(close2.index).tz_localize(None).normalize()
+            except Exception:
+                close1.index = pd.to_datetime(close1.index).normalize()
+                close2.index = pd.to_datetime(close2.index).normalize()
+
+            # Reindexar a días hábiles y rellenar hacia adelante para maximizar solapamiento
+            start_date = max(close1.index.min(), close2.index.min())
+            end_date = min(close1.index.max(), close2.index.max())
+            if start_date >= end_date:
+                console.print(f"[red]⚠️ Rango de fechas inválido para {etf1}/{etf2}[/red]")
+                continue
+            bday_idx = pd.date_range(start=start_date, end=end_date, freq='B')
+            if len(bday_idx) == 0:
+                console.print(f"[red]⚠️ Sin días hábiles para {etf1}/{etf2}[/red]")
+                continue
+            close1_b = close1.reindex(bday_idx).ffill()
+            close2_b = close2.reindex(bday_idx).ffill()
+
+            # Construir DataFrame conjunto con concat (más robusto) y descartar filas sin ambos precios
+            try:
+                close1_b = close1_b.copy(); close1_b.name = etf1
+                close2_b = close2_b.copy(); close2_b.name = etf2
+                pair_df = pd.concat([close1_b, close2_b], axis=1).dropna()
+                # Asegurar nombres de columnas exactamente como los tickers
+                if pair_df.shape[1] == 2:
+                    pair_df.columns = [etf1, etf2]
+                if pair_df.empty or len(pair_df) < 5:
+                    # fallback a intersección estricta
+                    common_dates = close1.index.intersection(close2.index)
+                    s1 = close1.loc[common_dates].copy(); s1.name = etf1
+                    s2 = close2.loc[common_dates].copy(); s2.name = etf2
+                    pair_df = pd.concat([s1, s2], axis=1).dropna()
+                    if pair_df.shape[1] == 2:
+                        pair_df.columns = [etf1, etf2]
+                if pair_df.empty:
+                    console.print(f"[yellow]⚠️ Sin solapamiento útil para {etf1}/{etf2}[/yellow]")
+                    continue
+                # Extraer series ya alineadas
+                close1_aligned = pair_df.iloc[:, 0]
+                close2_aligned = pair_df.iloc[:, 1]
+                common_dates = close1_aligned.index
+            except Exception as e:
+                console.print(f"[red]⚠️ Error alineando {etf1}/{etf2}: {e}")
+                continue
+
+            # Si la intersección o el ratio resultan vacíos, reintentar con Ticker.history(auto_adjust=True)
+            def _retry_history_us(symbol: str, period: str) -> pd.Series:
+                try:
+                    t = yf.Ticker(symbol)
+                    h = t.history(period=period, interval="1d", auto_adjust=True, actions=False)
+                    if not h.empty and "Close" in h:
+                        s = h["Close"].dropna().copy()
+                        try:
+                            s.index = pd.to_datetime(s.index).tz_localize(None).normalize()
+                        except Exception:
+                            s.index = pd.to_datetime(s.index).normalize()
+                        return s
+                except Exception:
+                    pass
+                return pd.Series(dtype=float)
+
+            if len(close1_aligned) == 0:
+                us1 = _retry_history_us(etf1, PERIODO_DATOS)
+                us2 = _retry_history_us(etf2, PERIODO_DATOS)
+                if not us1.empty and not us2.empty:
+                    common_dates = us1.index.intersection(us2.index)
+                    close1_aligned = us1.loc[common_dates]
+                    close2_aligned = us2.loc[common_dates]
             
-            if isinstance(close1, pd.DataFrame):
-                close1 = close1.iloc[:, 0]
-            if isinstance(close2, pd.DataFrame):
-                close2 = close2.iloc[:, 0]
-            
-            common_dates = close1.index.intersection(close2.index)
-            close1_aligned = close1.loc[common_dates]
-            close2_aligned = close2.loc[common_dates]
-            
-            if len(common_dates) < 60:  # Necesitamos más datos para análisis robusto
-                console.print(f"[red]⚠️ Datos insuficientes para {etf1}/{etf2} ({len(common_dates)} días)[/red]")
+            if len(close1_aligned) < 40:
+                console.print(f"[red]⚠️ Datos insuficientes para {etf1}/{etf2} ({len(close1_aligned)} días)[/red]")
                 continue
             
-            # Calcular el ratio
+            # Calcular el ratio y Test de Cointegración (ADF)
             ratio = close1_aligned / close2_aligned
             ratio_clean = ratio.dropna()
-            
-            # === MEJORA 1: TEST DE COINTEGRACIÓN ===
+            # Asegurar estructura 1D para todas las operaciones (algunos retornos pueden ser DataFrame 2D)
+            if isinstance(ratio_clean, pd.DataFrame):
+                ratio_series = ratio_clean.iloc[:, 0]
+            else:
+                ratio_series = ratio_clean
+
+            # Validaciones previas: datos suficientes y variabilidad
+            ratio_series = ratio_series.dropna()
+            if len(ratio_series) < 30:
+                console.print(f"[red]⚠️ Datos insuficientes en ratio {etf1}/{etf2} tras limpieza ({len(ratio_series)}). Se omite.[/red]")
+                continue
+            if ratio_series.nunique() <= 1:
+                console.print(f"[red]⚠️ Ratio {etf1}/{etf2} es constante. Se omite.[/red]")
+                continue
+
+            if adfuller is None:
+                console.print("[red]❌ statsmodels no está instalado: 'pip install statsmodels'. Se omite este par.[/red]")
+                continue
+
             try:
-                adf_result = adfuller(ratio_clean)
+                adf_result = adfuller(ratio_series.values.squeeze())
                 p_value_cointegration = adf_result[1]
-                adf_statistic = adf_result[0]
-                
-                if p_value_cointegration >= 0.05:
-                    console.print(f"[bold red]❌ Par {etf1}/{etf2} NO es cointegrado (p-valor: {p_value_cointegration:.4f}). Se descarta.[/bold red]")
-                    continue
-                else:
-                    console.print(f"[green]✅ Par {etf1}/{etf2} es cointegrado (p-valor: {p_value_cointegration:.4f})[/green]")
-                    cointegrated_pairs += 1
-                    
             except Exception as e:
-                console.print(f"[yellow]⚠️ Error en test de cointegración para {etf1}/{etf2}: {e}[/yellow]")
-                p_value_cointegration = 1.0  # Asumir no cointegrado si hay error
-                adf_statistic = 0
+                console.print(f"[red]❌ Error en ADF para {etf1}/{etf2}: {e}. Se omite.[/red]")
                 continue
             
-            # === MEJORA 3: OPTIMIZACIÓN DE VENTANA TEMPORAL ===
-            # Probar diferentes ventanas y elegir la más estable
+            if p_value_cointegration >= 0.05:
+                console.print(f"[bold red]❌ NO es cointegrado (p-valor: {p_value_cointegration:.4f}). Se descarta.[/bold red]")
+                continue
+            else:
+                console.print(f"[green]✅ Es cointegrado (p-valor: {p_value_cointegration:.4f})[/green]")
+                cointegrated_pairs += 1
+            
+            # Optimización de ventana temporal
             windows_to_test = [20, 30, 45, 60]
             best_window = lookback_window
             min_volatility = float('inf')
             
             for window in windows_to_test:
-                if len(ratio_clean) > window:
-                    test_sma = ratio_clean.rolling(window=window).mean()
-                    test_std = ratio_clean.rolling(window=window).std()
-                    test_z_scores = (ratio_clean - test_sma) / test_std
-                    z_volatility = test_z_scores.std()
-                    
+                if len(ratio_series) > window and window > 2:
+                    rolling_mean = ratio_series.rolling(window=window).mean()
+                    rolling_std = ratio_series.rolling(window=window).std()
+                    # Evitar ventanas con desviación estándar nula o NaN al final
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        z_series = (ratio_series - rolling_mean) / rolling_std
+                    z_volatility = z_series.replace([np.inf, -np.inf], np.nan).dropna().std()
                     if z_volatility < min_volatility:
                         min_volatility = z_volatility
                         best_window = window
             
             # Calcular estadísticas del ratio con la ventana optimizada
-            ratio_sma = ratio_clean.rolling(window=best_window).mean()
-            ratio_std = ratio_clean.rolling(window=best_window).std()
+            ratio_sma = ratio_series.rolling(window=best_window).mean()
+            ratio_std = ratio_series.rolling(window=best_window).std()
+            last_std = ratio_std.iloc[-1]
+            if pd.isna(last_std) or last_std == 0:
+                console.print(f"[yellow]⚠️ STD inválido con ventana {best_window} para {etf1}/{etf2}. Se omite.[/yellow]")
+                continue
+            z_score = (ratio_series.iloc[-1] - ratio_sma.iloc[-1]) / last_std
             
-            # Valores actuales
-            current_ratio = float(ratio_clean.iloc[-1])
-            current_sma = float(ratio_sma.iloc[-1])
-            current_std = float(ratio_std.iloc[-1])
-            
-            # Calcular Z-Score
-            z_score = (current_ratio - current_sma) / current_std if current_std > 0 else 0
-            
-            # === MEJORA 5: CÁLCULO DE HALF-LIFE ===
-            # Estimar cuánto tarda el ratio en revertir a la media
+            # Cálculo de Half-Life de reversión
+            ratio_lagged = ratio_series.shift(1).dropna()
+            ratio_diff = ratio_series[1:] - ratio_lagged
             try:
-                # Usar regresión simple para estimar half-life
-                ratio_lagged = ratio_clean.shift(1).dropna()
-                ratio_current = ratio_clean[1:len(ratio_lagged)+1]
-                ratio_diff = ratio_current - ratio_lagged
-                
-                # Regresión: ratio_diff = alpha + beta * ratio_lagged
-                from sklearn.linear_model import LinearRegression
-                X = ratio_lagged.values.reshape(-1, 1)
-                y = ratio_diff.values
-                
-                reg = LinearRegression().fit(X, y)
-                beta = reg.coef_[0]
-                
-                # Half-life = -ln(2) / ln(1 + beta)
-                if beta < 0:
-                    half_life = -np.log(2) / np.log(1 + beta)
+                reg = LinearRegression().fit(ratio_lagged.values.reshape(-1, 1), ratio_diff.values)
+                beta = float(reg.coef_[0])
+                # Cálculo robusto de half-life: usar log1p y proteger casos límite (beta<=-1 o denom>=0)
+                denom = float(np.log1p(beta)) if np.isfinite(beta) else np.nan
+                if not np.isfinite(denom) or denom >= 0:
+                    half_life = float('inf')
                 else:
-                    half_life = float('inf')  # No hay reversión
-                    
-            except Exception:
-                half_life = float('inf')
+                    half_life = -np.log(2.0) / denom
+            except Exception as e:
+                console.print(f"[yellow]⚠️ No se pudo estimar half-life para {etf1}/{etf2}: {e}. Se omite.[/yellow]")
+                continue
             
-            # Precios actuales
-            price1_current = float(close1_aligned.iloc[-1])
-            price2_current = float(close2_aligned.iloc[-1])
+            # Lógica de señales con umbral configurable
+            signal, action_detail, confidence, stop_loss_level = "ESPERAR", "", "BAJA", "N/A"
+            stop_loss_z_score = Z_SCORE_ENTRADA + 1.5 # Stop loss dinámico
             
-            # Calcular correlación histórica
-            correlation = close1_aligned.corr(close2_aligned)
-            
-            # === MEJORA 2: LÓGICA DE SALIDA Y STOP-LOSS ===
-            signal = "ESPERAR"
-            action_detail = ""
-            confidence = "BAJA"
-            exit_target = f"Z-Score=0 (Ratio={current_sma:.4f})"
-            stop_loss_z_score = 3.5
-            
-            # Generar señales con stop-loss
-            if abs(z_score) >= 2.0:
+            if abs(z_score) >= Z_SCORE_ENTRADA:
                 confidence = "ALTA"
-                if z_score > 2.0:
+                if z_score > Z_SCORE_ENTRADA:
                     signal = "VENDER ETF1 / COMPRAR ETF2"
                     action_detail = f"Vender {etf1}, Comprar {etf2} (Ratio sobrevalorado)"
-                    stop_loss_level = f"Z-Score > {stop_loss_z_score}"
-                elif z_score < -2.0:
+                    stop_loss_level = f"Z-Score > {stop_loss_z_score:.1f}"
+                else:
                     signal = "COMPRAR ETF1 / VENDER ETF2"
                     action_detail = f"Comprar {etf1}, Vender {etf2} (Ratio subvalorado)"
-                    stop_loss_level = f"Z-Score < -{stop_loss_z_score}"
-            elif abs(z_score) >= 1.5:
-                confidence = "MEDIA"
-                if z_score > 1.5:
-                    signal = "CONSIDERAR VENTA ETF1"
-                    action_detail = f"Considerar vender {etf1} (Ratio elevado)"
-                    stop_loss_level = f"Z-Score > {stop_loss_z_score}"
-                elif z_score < -1.5:
-                    signal = "CONSIDERAR COMPRA ETF1"
-                    action_detail = f"Considerar comprar {etf1} (Ratio bajo)"
-                    stop_loss_level = f"Z-Score < -{stop_loss_z_score}"
-            else:
-                stop_loss_level = "N/A"
-            
-            # === MEJORA 4: DIMENSIONAMIENTO DE POSICIÓN ===
-            # Calcular número de acciones para posición neutral al mercado
+                    stop_loss_level = f"Z-Score < -{stop_loss_z_score:.1f}"
+
+            # Dimensionamiento de posición y calidad del par
+            price1_current = close1_aligned.iloc[-1]
+            price2_current = close2_aligned.iloc[-1]
             acciones_etf1 = int(monto_por_pata / price1_current)
             acciones_etf2 = int(monto_por_pata / price2_current)
+            correlation = close1_aligned.corr(close2_aligned)
             
-            # Valor real de cada lado
-            valor_etf1 = acciones_etf1 * price1_current
-            valor_etf2 = acciones_etf2 * price2_current
-            
-            # Calcular retorno esperado
-            expected_return_pct = 0
-            if abs(z_score) >= 1.5:
-                target_ratio = current_sma
-                if z_score > 0:
-                    expected_return_pct = ((target_ratio / current_ratio) - 1) * 100
-                else:
-                    expected_return_pct = ((current_ratio / target_ratio) - 1) * 100
-            
-            # Evaluar calidad del par
             pair_quality = "EXCELENTE" if (correlation > 0.8 and half_life < 20 and p_value_cointegration < 0.01) else \
-                          "BUENA" if (correlation > 0.7 and half_life < 40 and p_value_cointegration < 0.03) else \
-                          "REGULAR"
+                           "BUENA" if (correlation > 0.7 and half_life < 40 and p_value_cointegration < 0.03) else \
+                           "REGULAR"
             
             results.append({
-                "Par": f"{etf1}/{etf2}",
-                "ETF1": etf1,
-                "ETF2": etf2,
-                "Precio ETF1": price1_current,
-                "Precio ETF2": price2_current,
-                "Ratio Actual": current_ratio,
-                "Ratio Media": current_sma,
-                "Z-Score": z_score,
-                "Correlación": correlation,
-                "P-Valor Cointeg.": p_value_cointegration,
-                "Half-Life (días)": half_life if half_life != float('inf') else 999,
-                "Ventana Óptima": best_window,
-                "Señal": signal,
-                "Confianza": confidence,
-                "Calidad Par": pair_quality,
-                "Stop-Loss": stop_loss_level,
-                "Exit Target": exit_target,
-                "Acciones ETF1": acciones_etf1,
-                "Acciones ETF2": acciones_etf2,
-                "Valor ETF1": valor_etf1,
-                "Valor ETF2": valor_etf2,
-                "Retorno Esperado (%)": expected_return_pct,
-                "Acción Detallada": action_detail
+                "Par": f"{etf1}/{etf2}", "Z-Score": z_score, "P-Valor Cointeg.": p_value_cointegration,
+                "Half-Life (días)": half_life, "Calidad Par": pair_quality, "Señal": signal, "Confianza": confidence,
+                "Acción Detallada": action_detail, "Stop-Loss": stop_loss_level, "Correlación": correlation,
+                "Acciones ETF1": acciones_etf1, "Valor ETF1": acciones_etf1 * price1_current,
+                "Acciones ETF2": acciones_etf2, "Valor ETF2": acciones_etf2 * price2_current,
             })
             
         except Exception as e:
@@ -5806,126 +5943,71 @@ def pairs_trading_etf_leveraged():
             continue
     
     if not results:
-        console.print("[bold red]❌ No se encontraron pares cointegrados válidos[/bold red]")
+        console.print("[bold red]❌ No se encontraron pares cointegrados válidos para analizar.[/bold red]")
         return
     
     console.print(f"\n[bold green]✅ Pares cointegrados encontrados: {cointegrated_pairs}/{len(pairs_to_analyze)}[/bold green]")
     
     # Crear DataFrame y ordenar por calidad y Z-Score
     df_results = pd.DataFrame(results)
-    
-    # Ordenar por: 1) Calidad del par, 2) Z-Score absoluto
     quality_order = {"EXCELENTE": 3, "BUENA": 2, "REGULAR": 1}
     df_results['Quality_Score'] = df_results['Calidad Par'].map(quality_order)
     df_results['Z_Score_Abs'] = df_results['Z-Score'].abs()
     df_results = df_results.sort_values(['Quality_Score', 'Z_Score_Abs'], ascending=[False, False])
     
-    # Mostrar tabla principal con Rich
-    table = Table(title="🔄 Pairs Trading Avanzado - Análisis Cuantitativo")
-    table.add_column("Par", style="cyan", no_wrap=True)
+    # --- Tablas de Resultados con Rich ---
+    table = Table(title=f"🔄 Análisis de Pares (Z-Score > {Z_SCORE_ENTRADA}, Half-Life < {MAX_HALF_LIFE}d)")
+    table.add_column("Par", style="cyan")
     table.add_column("Z-Score", style="yellow")
     table.add_column("P-Valor", style="magenta")
     table.add_column("Half-Life", style="green")
     table.add_column("Calidad", style="blue")
     table.add_column("Señal", style="bold")
-    table.add_column("Confianza", style="white")
-    table.add_column("Ret. Esp.", style="red")
     
     for _, row in df_results.iterrows():
-        z_score = row['Z-Score']
-        half_life = row['Half-Life (días)']
+        z_score_str = f"[bold red]{row['Z-Score']:.2f}[/bold red]" if abs(row['Z-Score']) >= Z_SCORE_ENTRADA else f"{row['Z-Score']:.2f}"
+        half_life_str = f"[bold green]{row['Half-Life (días)']:.1f}d[/bold green]" if row['Half-Life (días)'] <= 10 else f"[yellow]{row['Half-Life (días)']:.1f}d[/yellow]"
+        signal_str = f"[bold green]{row['Señal']}[/bold green]" if row['Señal'] != "ESPERAR" else row['Señal']
         
-        # Colorear Z-Score
-        if abs(z_score) >= 2.0:
-            z_score_str = f"[bold red]{z_score:.2f}[/bold red]"
-        elif abs(z_score) >= 1.5:
-            z_score_str = f"[bold yellow]{z_score:.2f}[/bold yellow]"
-        else:
-            z_score_str = f"{z_score:.2f}"
-        
-        # Colorear Half-Life
-        if half_life <= 10:
-            half_life_str = f"[bold green]{half_life:.1f}d[/bold green]"
-        elif half_life <= 30:
-            half_life_str = f"[yellow]{half_life:.1f}d[/yellow]"
-        else:
-            half_life_str = f"[red]{half_life:.1f}d[/red]"
-        
-        # Colorear señal
-        signal = row['Señal']
-        if "VENDER" in signal and "COMPRAR" in signal:
-            signal_str = f"[bold green]{signal}[/bold green]"
-        elif "CONSIDERAR" in signal:
-            signal_str = f"[yellow]{signal}[/yellow]"
-        else:
-            signal_str = signal
-        
-        table.add_row(
-            row['Par'],
-            z_score_str,
-            f"{row['P-Valor Cointeg.']:.4f}",
-            half_life_str,
-            row['Calidad Par'],
-            signal_str,
-            row['Confianza'],
-            f"{row['Retorno Esperado (%)']:.2f}%"
-        )
+        table.add_row(row['Par'], z_score_str, f"{row['P-Valor Cointeg.']:.4f}", half_life_str, row['Calidad Par'], signal_str)
     
     console.print(table)
     
-    # Tabla de dimensionamiento de posiciones
-    console.print(f"\n[bold cyan]📊 Dimensionamiento de Posiciones (Monto: ${monto_por_pata:,.0f} por lado):[/bold cyan]")
+    # --- Recomendaciones Finales Enfocadas en el Concurso ---
+    oportunidades = df_results[
+        (df_results['Z_Score_Abs'] >= Z_SCORE_ENTRADA) & 
+        (df_results['Half-Life (días)'] <= MAX_HALF_LIFE)
+    ]
     
-    position_table = Table(title="Cálculo de Posiciones para Mercado Neutral")
-    position_table.add_column("Par", style="cyan")
-    position_table.add_column("Acciones ETF1", style="green")
-    position_table.add_column("Valor ETF1", style="blue")
-    position_table.add_column("Acciones ETF2", style="green")
-    position_table.add_column("Valor ETF2", style="blue")
-    position_table.add_column("Stop-Loss", style="red")
-    
-    for _, row in df_results.head(5).iterrows():  # Solo top 5
-        position_table.add_row(
-            row['Par'],
-            f"{row['Acciones ETF1']:,}",
-            f"${row['Valor ETF1']:,.0f}",
-            f"{row['Acciones ETF2']:,}",
-            f"${row['Valor ETF2']:,.0f}",
-            row['Stop-Loss']
-        )
-    
-    console.print(position_table)
-    
-    # Recomendaciones finales
-    excellent_pairs = df_results[df_results['Calidad Par'] == 'EXCELENTE']
-    high_confidence = df_results[df_results['Confianza'] == 'ALTA']
-    
-    console.print(f"\n[bold green]⭐ PARES DE CALIDAD EXCELENTE ({len(excellent_pairs)}):[/bold green]")
-    if not excellent_pairs.empty:
-        for _, row in excellent_pairs.iterrows():
-            console.print(f"   • {row['Par']}: Z-Score={row['Z-Score']:.2f}, Half-Life={row['Half-Life (días)']:.1f}d, Correlación={row['Correlación']:.3f}")
-    
-    console.print(f"\n[bold red]🎯 OPORTUNIDADES DE ALTA CONFIANZA ({len(high_confidence)}):[/bold red]")
-    if not high_confidence.empty:
-        for _, row in high_confidence.iterrows():
-            console.print(f"   • {row['Acción Detallada']}")
-            console.print(f"     └─ Z-Score: {row['Z-Score']:.2f}, Retorno Esp: {row['Retorno Esperado (%)']:.2f}%, Half-Life: {row['Half-Life (días)']:.1f}d")
-    
+    console.print(f"\n[bold red]🎯 OPORTUNIDADES PRINCIPALES PARA EL CONCURSO ({len(oportunidades)} encontradas):[/bold red]")
+    if not oportunidades.empty:
+        position_table = Table(title="Posiciones Sugeridas (Mercado Neutral)")
+        position_table.add_column("Par", style="cyan")
+        position_table.add_column("Acción", style="yellow")
+        position_table.add_column("Acciones ETF1", style="green")
+        position_table.add_column("Acciones ETF2", style="green")
+        position_table.add_column("Stop-Loss", style="red")
+        
+        for _, row in oportunidades.iterrows():
+            console.print(f"  • [bold]{row['Par']}[/bold]: {row['Acción Detallada']}")
+            console.print(f"    └─ Z-Score: {row['Z-Score']:.2f}, Half-Life: {row['Half-Life (días)']:.1f}d, Correlación: {row['Correlación']:.3f}")
+            position_table.add_row(
+                row['Par'],
+                "Vender / Comprar" if row['Z-Score'] > 0 else "Comprar / Vender",
+                f"{row['Acciones ETF1']:,}",
+                f"{row['Acciones ETF2']:,}",
+                row['Stop-Loss']
+            )
+        console.print(position_table)
+    else:
+        console.print("[yellow]No se encontraron oportunidades que cumplan con todos los criterios de entrada para el concurso.[/yellow]")
+
     # Guardar resultados
     os.makedirs('data', exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_file_path = f'data/pairs_trading_advanced_{timestamp}.csv'
+    csv_file_path = f'data/pairs_trading_concurso_{timestamp}.csv'
     df_results.to_csv(csv_file_path, index=False)
-    
-    console.print(f"\n[bold blue]🧠 Conceptos Avanzados Implementados:[/bold blue]")
-    console.print("• [green]Test de Cointegración (ADF)[/green]: Solo pares estadísticamente válidos")
-    console.print("• [yellow]Half-Life de Reversión[/yellow]: Velocidad de retorno a la media")
-    console.print("• [cyan]Ventana Optimizada[/cyan]: Mejor período de análisis por par")
-    console.print("• [red]Stop-Loss Dinámico[/red]: Protección contra divergencias extremas")
-    console.print("• [blue]Posición Neutral[/blue]: Mismo valor monetario en ambos lados")
-    
     console.print(f"\n[bold yellow]📁 Análisis completo guardado en: {csv_file_path}[/bold yellow]")
-
 
 def volatility_based_capital_allocation():
     """
@@ -6143,7 +6225,7 @@ def volatility_based_capital_allocation():
     console.print(f"\n[bold yellow]📁 Resultados guardados en: {csv_file_path}[/bold yellow]")
 
 
-def suggest_technical_etf_leveraged(
+def suggest_enhanced_etf_strategy_leveraged(
     tickers=['FAS','FAZ', 'QLD', 'SOXL','SOXS', 'SPXL', 'SPXS', 'SQQQ', 'TECL', 'TECS', 'TNA', 'TQQQ']
 ):
     """
@@ -6154,8 +6236,22 @@ def suggest_technical_etf_leveraged(
     console.print("[bold blue]🚀 Análisis Optimizado de ETFs Apalancados[/bold blue]")
     console.print("[yellow]Buscando ETFs con tendencia alcista de 5 semanas pero con caída hoy...[/yellow]")
     
-    # Solicitar al usuario que ingrese tickers
+    # Solicitar al usuario que ingrese tickers (con soporte de comandos estilo vim)
     input_tickers = input("Ingresa las ETFs separadas por comas (presiona Enter para usar valores por defecto): ")
+    cmd = input_tickers.strip()
+    if cmd.startswith(":"):
+        cmd_lower = cmd[1:].strip().lower()
+        if cmd_lower in ("q", "quit"):
+            exit_program(); return
+        if cmd_lower in ("b", "back"):
+            return
+        if cmd_lower.isdigit():
+            try:
+                idx = int(cmd_lower) - 1
+                console.print(f"[yellow]Saltando a opción {idx+1} del menú...[/yellow]")
+                raise SystemExit(f"__GOTO_MENU_OPTION__:{idx}")
+            except Exception:
+                return
 
     if input_tickers.strip():
         tickers = [ticker.strip().upper() for ticker in input_tickers.split(",")]
@@ -6644,158 +6740,150 @@ def suggest_technical_beta2(
     print(f"Acciones recomendadas para vender:\n {','.join(acciones_vender)}")
 
 
-
 def suggest_technical(
     tickers=[
-        "XLK",
-        "GDX",
-        "AAPL",
-        "CEMEXCPO.MX",
-        "AXP",
-        "AMZN",
-        "GOOGL",
-        "META",
-        "QQQ",
-        "MSFT",
-        "JPM",
-        "BOLSAA.MX",
-        "XLF",
-        "TSLA",
-        "GMEXICOB.MX",
-        "PE&OLES.MX",
+        "XLK", "GDX", "AAPL", "CEMEXCPO.MX", "AXP", "AMZN", "GOOGL", "META",
+        "QQQ", "MSFT", "JPM", "BOLSAA.MX", "XLF", "TSLA", "GMEXICOB.MX", "PE&OLES.MX",
     ]
 ):
-    # Solicitar al usuario que ingrese tickers
+    """
+    Algoritmo de análisis técnico optimizado para un concurso de corto plazo (3 semanas).
+    Estrategia: Reversión a la media con Bandas de Bollinger y RSI.
+    Busca condiciones de sobreventa para comprar y sobrecompra para vender.
+    """
     input_tickers = input(
-        "Ingresa las acciones separadas por comas (i.e. OMAB,AAPL,META,MSFT): "
+        "Ingresa las acciones separadas por comas (o Enter para usar la lista por defecto): "
     )
 
-    if input_tickers.strip():  # Si se ingresaron tickers, usarlos
-        tickers = [ticker.strip() for ticker in input_tickers.split(",")]
+    if input_tickers.strip():
+        tickers = [ticker.strip().upper() for ticker in input_tickers.split(",")]
     else:
         console.print(
-            f"\n[bold yellow] No se detectó entrada, usando valores sugeridos por defecto...[/bold yellow]"
+            f"\n[bold yellow]No se detectó entrada, usando valores sugeridos por defecto...[/bold yellow]"
         )
 
-    resultados = []  # Para almacenar los resultados
-    acciones_comprar = []  # Para las acciones recomendadas para comprar
-    acciones_mantener = []  # Para las acciones recomendadas para esperar
-    acciones_vender = []  # Para las acciones recomendadas para vender
+    resultados = []
+    acciones_comprar = []
+    acciones_vender = []
+    acciones_mantener = []
 
-    # Iterar sobre cada ticker
+    console.print("\n[bold cyan]🚀 Analizando acciones con estrategia optimizada para concurso...[/bold cyan]")
+
     for ticker in tickers:
         try:
-            # Descargar datos de los últimos 6 meses
-            df_ticker = yf.download(ticker, period="6mo")
-            df_ticker.dropna(inplace=True)
+            # --- MEJORA: Descarga de datos más robusta ---
+            # Intenta primero con el ticker mexicano (.MX)
+            mx_ticker = normalize_ticker_to_mx(ticker)
+            df_ticker = yf.download(mx_ticker, period="3mo", progress=False, interval="1d")
 
             if df_ticker.empty:
-                print(f"Advertencia: No se encontraron datos para {ticker}.")
+                # Si falla, intenta con el ticker de USA
+                usa_ticker = ticker.replace('.MX', '')
+                df_ticker = yf.download(usa_ticker, period="3mo", progress=False, interval="1d")
+                if not df_ticker.empty:
+                    console.print(f"[yellow]Usando datos de USA para {ticker}[/yellow]")
+
+            if df_ticker.empty or len(df_ticker) < 25:
+                console.print(f"[red]Datos insuficientes para {ticker}. Omitiendo.[/red]")
                 continue
 
-            # Asegurar Series 1D para indicadores técnicos
+            # --- Indicadores con parámetros más sensibles para corto plazo ---
             close = df_ticker["Close"]
             high = df_ticker["High"]
             low = df_ticker["Low"]
-            if isinstance(close, pd.DataFrame):
-                close = close.iloc[:, 0]
-            if isinstance(high, pd.DataFrame):
-                high = high.iloc[:, 0]
-            if isinstance(low, pd.DataFrame):
-                low = low.iloc[:, 0]
 
-            # Calcular indicadores técnicos
-            rsi = RSIIndicator(close, window=14).rsi()
-            stochastic = StochasticOscillator(
-                high,
-                low,
-                close,
-                window=14,
-                smooth_window=3,
-            )
-            macd = MACD(close).macd_diff()
-            bollinger = BollingerBands(close)
+            # Bandas de Bollinger (20 periodos, 2 desviaciones estándar) - Estándar y efectivo
+            bollinger = BollingerBands(close, window=20, window_dev=2)
+            bb_high = bollinger.bollinger_hband()
+            bb_low = bollinger.bollinger_lband()
+            bb_mid = bollinger.bollinger_mavg() # Media móvil de 20 días
 
-            # Obtener datos recientes
-            rsi_actual = rsi.iloc[-1]
-            stochastic_actual = stochastic.stoch().iloc[-1]
-            macd_actual = macd.iloc[-1]
-            close_hoy = df_ticker["Close"].iloc[-1]
-            close_ayer = df_ticker["Close"].iloc[-2]
-            close_anteayer = df_ticker["Close"].iloc[-3]
-            bollinger_high = bollinger.bollinger_hband().iloc[-1]
-            bollinger_low = bollinger.bollinger_lband().iloc[-1]
+            # RSI (Índice de Fuerza Relativa) - Ventana de 10 para mayor sensibilidad
+            rsi = RSIIndicator(close, window=10).rsi()
 
-            # Calcular las variaciones diarias
-            variacion_ayer = (close_ayer - close_anteayer) / close_anteayer * 100
-            variacion_hoy = (close_hoy - close_ayer) / close_ayer * 100
+            # --- Lógica de Decisión Optimizada ---
+            precio_actual = float(close.iloc[-1])
+            rsi_actual = float(rsi.iloc[-1])
+            bb_high_actual = float(bb_high.iloc[-1])
+            bb_low_actual = float(bb_low.iloc[-1])
+            bb_mid_actual = float(bb_mid.iloc[-1])
 
-            # Condiciones de compra: variación ayer positiva, hoy negativa + indicadores técnicos
-            condiciones_compra = (
-                variacion_ayer > 0 and variacion_hoy < 0
-                and rsi_actual < 66
-                and stochastic_actual < 90
-                and macd_actual > 0  
-                and close_hoy < bollinger_high  
-            )
+            accion_recomendacion = "Esperar"
+            confianza = "Baja"
 
-            # Determinar la acción recomendada
-            if condiciones_compra:
+            # --- CONDICIONES DE COMPRA (SOBREVENTA) ---
+            # Fuerte: Precio por debajo de la banda inferior Y RSI muy bajo.
+            if precio_actual < bb_low_actual and rsi_actual < 30:
                 accion_recomendacion = "Comprar"
+                confianza = "Alta 🔥"
                 acciones_comprar.append(ticker)
-            elif rsi_actual > 80 and close_hoy > bollinger_high:
+            # Moderada: Precio cerca de la banda inferior Y RSI bajo.
+            elif precio_actual < (bb_low_actual * 1.015) and rsi_actual < 35:
+                accion_recomendacion = "Comprar"
+                confianza = "Media"
+                acciones_comprar.append(ticker)
+
+            # --- CONDICIONES DE VENTA (SOBRECOMPRA) ---
+            # Fuerte: Precio por encima de la banda superior Y RSI muy alto.
+            elif precio_actual > bb_high_actual and rsi_actual > 70:
                 accion_recomendacion = "Vender"
+                confianza = "Alta 🔥"
                 acciones_vender.append(ticker)
-            else:
-                accion_recomendacion = "Esperar"
+            # Moderada: Precio cerca de la banda superior Y RSI alto.
+            elif precio_actual > (bb_high_actual * 0.985) and rsi_actual > 68:
+                accion_recomendacion = "Vender"
+                confianza = "Media"
+                acciones_vender.append(ticker)
+            
+            if accion_recomendacion == "Esperar":
                 acciones_mantener.append(ticker)
 
-            # Almacenar los resultados
-            resultados.append(
-                {
-                    "Ticker": ticker,
-                    "RSI": rsi_actual,
-                    "Stochastic": stochastic_actual,
-                    "MACD": macd_actual,
-                    "Bollinger_High": bollinger_high,
-                    "Bollinger_Low": bollinger_low,
-                    "Variación Ayer (%)": variacion_ayer,
-                    "Variación Hoy (%)": variacion_hoy,
-                    "Acción Recomendada": accion_recomendacion,
-                }
-            )
+            resultados.append({
+                "Ticker": ticker,
+                "Precio Actual": f"${precio_actual:,.2f}",
+                "RSI(10)": f"{rsi_actual:.2f}",
+                "Posición BB": f"{((precio_actual - bb_low_actual) / (bb_high_actual - bb_low_actual) * 100):.1f}%",
+                "Acción": accion_recomendacion,
+                "Confianza": confianza,
+            })
 
         except Exception as e:
-            print(f"Error con {ticker}: {e}")
+            console.print(f"[red]Error procesando {ticker}: {e}[/red]")
             continue
 
-    # Crear un DataFrame a partir de los resultados
+    if not resultados:
+        console.print("[bold red]No se pudieron analizar acciones.[/bold red]")
+        return
+
+    # --- Mostrar Resultados ---
     df_resultados = pd.DataFrame(resultados)
     
-    os.makedirs('data', exist_ok=True)    
-    csv_file_path = f'data/suggest_technical_{datetime.now():%Y%m%d_%H%M%S}.csv'
-    df_resultados.to_csv(csv_file_path, index=False)
+    # Colorear la tabla para mejor visualización
+    def colorear_accion(val):
+        if val == "Comprar":
+            return "color: #2ECC71" # Verde
+        elif val == "Vender":
+            return "color: #E74C3C" # Rojo
+        return ""
 
-    # Imprimir la tabla de resultados
-    print("\nResumen de Indicadores Técnicos:\n")
-    print(df_resultados)
+    styled_df = df_resultados.style.applymap(colorear_accion, subset=['Acción'])
 
-    # Mostrar recomendaciones
-    print(f"\nAcciones recomendadas para comprar:\n {','.join(acciones_comprar)}")
-    print(f"Acciones recomendadas para esperar:\n {','.join(acciones_mantener)}")
-    print(f"Acciones recomendadas para vender:\n {','.join(acciones_vender)}")
+    console.print("\n[bold]Resumen de Indicadores Optimizados:[/bold]")
+    print(styled_df.to_string()) # Usamos to_string para ver el estilo en la consola
 
-
+    console.print(f"\n[bold green]✅ Acciones recomendadas para COMPRAR ({len(acciones_comprar)}):[/bold green] {', '.join(acciones_comprar)}")
+    console.print(f"\n[bold red]❌ Acciones recomendadas para VENDER ({len(acciones_vender)}):[/bold red] {', '.join(acciones_vender)}")
+    console.print(f"\n[bold yellow]⏳ Acciones para ESPERAR Y MONITOREAR ({len(acciones_mantener)}):[/bold yellow] {', '.join(acciones_mantener)}")
 
 def set_optimizar_portafolio():
     input_amount = (
-        input("Enter the amount to invest (i.e. 800000): ")
+        input("Enter the amount to invest (i.e. 400000): ")
         .replace(",", "")
         .replace("$", "")
         .strip()
     )
     if not input_amount:  # Si el usuario no ingresa nada
-        input_amount = 800000  # Valor por defecto
+        input_amount = 400000  # Valor por defecto
     else:
         input_amount = int(float(input_amount))  # Convertir a número
     input_tickers = str(
@@ -6830,13 +6918,13 @@ def set_optimizar_portafolio():
 
 def set_optimizar_portafolio2():
     input_amount = (
-        input("Enter the amount to invest (i.e. 800000): ")
+        input("Enter the amount to invest (i.e. 400000): ")
         .replace(",", "")
         .replace("$", "")
         .strip()
     )
     if not input_amount:  # Si el usuario no ingresa nada
-        input_amount = 800000  # Valor por defecto
+        input_amount = 400000  # Valor por defecto
     else:
         input_amount = int(float(input_amount))  # Convertir a número
     input_tickers = str(
@@ -7253,26 +7341,71 @@ def anwser_daily_quizz_ia_gemini_method(pregunta, answer_options):
     # Usar helper con SDK oficial (lee GEMINI_API_KEY del entorno)
     text = generate_gemini_text(prompt).strip()
     if not text:
-        # Heurística de respaldo: seleccionar opción cuyo texto contenga palabras clave
+        print("Gemini no disponible, usando heurística de respaldo...")
+        # Heurística de respaldo mejorada
         try:
             lowered = str(pregunta).lower()
             keywords = []
-            if "volatil" in lowered:
+            
+            # Palabras clave específicas para diferentes tipos de preguntas
+            if "cnbv" in lowered or "comisión nacional" in lowered:
+                keywords = ["supervisar", "regular", "sistema financiero"]
+            elif "volatil" in lowered:
                 keywords = ["fluct", "vari", "precios"]
+            elif "riesgo" in lowered:
+                keywords = ["pérdida", "incertidumbre", "variabilidad"]
+            elif "liquidez" in lowered:
+                keywords = ["convertir", "dinero", "efectivo"]
+            elif "dividendo" in lowered:
+                keywords = ["utilidades", "ganancias", "distribución"]
+            elif "inflación" in lowered:
+                keywords = ["precios", "aumento", "general"]
+            elif "tasa" in lowered and "interés" in lowered:
+                keywords = ["costo", "dinero", "crédito"]
+            
             # Buscar la primera opción que empareje palabras clave
             for opt in (answer_options or []):
                 resp_txt = str(opt.get("respuesta", "")).lower()
                 if any(k in resp_txt for k in keywords):
+                    print(f"Seleccionando opción por palabra clave: {opt.get('opcion')} - {opt.get('respuesta')}")
                     return int(opt.get("idRespuesta"))
-        except Exception:
+            
+            # Si no hay coincidencias, seleccionar la opción B (generalmente correcta en exámenes)
+            print("No se encontraron palabras clave, seleccionando opción B por defecto")
+            for opt in (answer_options or []):
+                if opt.get("opcion") == "B":
+                    return int(opt.get("idRespuesta"))
+                    
+            # Último recurso: primera opción
+            if answer_options:
+                print("Seleccionando primera opción como último recurso")
+                return int(answer_options[0].get("idRespuesta"))
+                
+        except Exception as e:
+            print(f"Error en heurística: {e}")
             pass
+        
+        # Si todo falla, devolver la primera opción disponible
+        if answer_options:
+            return int(answer_options[0].get("idRespuesta"))
         return None
+    
     # Extraer el primer número (idRespuesta)
     try:
         import re
         match = re.search(r"\d+", text)
-        return int(match.group(0)) if match else None
-    except Exception:
+        result = int(match.group(0)) if match else None
+        if result:
+            print(f"Gemini seleccionó idRespuesta: {result}")
+        return result
+    except Exception as e:
+        print(f"Error extrayendo respuesta de Gemini: {e}")
+        # Fallback a heurística si Gemini falla
+        if answer_options:
+            for opt in answer_options:
+                if opt.get("opcion") == "B":
+                    return int(opt.get("idRespuesta"))
+            return int(answer_options[0].get("idRespuesta"))
         return None
 
 # Envía la respuesta del cuestionario
@@ -7297,6 +7430,11 @@ def send_quizz_answer(pregunta):
     #answer_id = anwser_daily_quizz_random_method(first_response_id)
     answer_id = anwser_daily_quizz_ia_gemini_method(pregunta, answer_options)
 
+    # Validar que tenemos un answer_id válido
+    if answer_id is None:
+        print("Error: No se pudo determinar una respuesta válida, usando método aleatorio como fallback")
+        answer_id = anwser_daily_quizz_random_method(first_response_id)
+    
     print(f"\n\nAnswering with idRespuesta: {answer_id}")
 
     # Define the request headers
@@ -7660,56 +7798,115 @@ def test_session1():
 
 
 def utilidades_actinver_2024():
-    while True:
-        clear_screen()
-        print("Selecciona una opción:")
-        menu_options = {
-            "1": "Probar Credenciales de sesión en la plataforma del reto",
-            "2": "Obtener pregunta de Quizz diario",
-            "3": "Resolver Quizz diario",
-            "4": "Programar respuesta automática de Quizz diario",
-            "5": "Resolver Quizz semanal",
-            "6": "Programar respuesta automática de Quizz semanal",
-            "7": "Mostrar sugerencias de compra",
-            "8": "Mostrar portafolio actual",
-            "9": "Comprar acciones",
-            "10": "Mostrar órdenes",
-            "11": "Monitorear venta",
-            "12": "Vender todas las posiciones en portafolio (a precio del mercado)",
-            "13": "Restaurar sesión en plataforma del reto",
-            "14": "Listar tareas programadas",
-            "0": "Regresar",
-        }
+    # Construcción del menú con secciones
+    menu_items = [
+        { 'type': 'item', 'text': 'Probar Credenciales de sesión en la plataforma del reto', 'action': test_session },
+        { 'type': 'item', 'text': 'Obtener pregunta de Quizz diario', 'action': option_2 },
+        { 'type': 'item', 'text': 'Resolver Quizz diario', 'action': answer_quiz_daily_contest_actinver },
+        { 'type': 'item', 'text': 'Programar respuesta automática de Quizz diario', 'action': start_scheduled_quiz },
+        { 'type': 'item', 'text': 'Resolver Quizz semanal', 'action': answer_quiz_weekly_contest_actinver },
+        { 'type': 'item', 'text': 'Programar respuesta automática de Quizz semanal', 'action': start_scheduled_weekly_quiz },
+        { 'type': 'item', 'text': 'Mostrar sugerencias de compra', 'action': option_5 },
+        { 'type': 'item', 'text': 'Mostrar portafolio actual', 'action': option_6 },
+        { 'type': 'item', 'text': 'Comprar acciones', 'action': option_7 },
+        { 'type': 'item', 'text': 'Mostrar órdenes', 'action': option_8 },
+        { 'type': 'item', 'text': 'Monitorear venta', 'action': option_9 },
+        { 'type': 'item', 'text': 'Vender todas las posiciones en portafolio (a precio del mercado)', 'action': test_session0 },
+        { 'type': 'item', 'text': 'Restaurar sesión en plataforma del reto', 'action': test_session1 },
+        { 'type': 'item', 'text': 'Listar tareas programadas', 'action': list_tasks_scheduled },
+        { 'type': 'item', 'text': 'Monitor de Stocks (GUI)', 'action': monitor_stocks_gui },
+        { 'type': 'item', 'text': 'Reporte Visual', 'action': daily_visual_report },
+        { 'type': 'item', 'text': 'Imprimir Consejos', 'action': imprimir_consejos_inversion },
+        { 'type': 'item', 'text': 'Regresar', 'action': lambda: None },
+    ]
 
-        for key, value in menu_options.items():
-            print(f"\t{key} - {value}")
+    # Lógica para mapear números a índices de elementos ejecutables
+    executable_options = [item for item in menu_items if item['type'] == 'item']
+    num_to_index = {}
+    current_num = 1
+    for i, item in enumerate(menu_items):
+        if item['type'] == 'item':
+            num_to_index[str(current_num)] = i
+            current_num += 1
 
-        opcion_main_menu = input("Teclea una opción >> ")
+    selected_index = 0  # Índice inicial para la opción seleccionable
 
-        if opcion_main_menu in menu_options:
-            if opcion_main_menu == "0":
+    def display_menu(selected_index):
+        console.clear()
+        console.print("[bold blue]Utilidades - Reto Actinver 2025:[/bold blue]")
+        current_display_num = 1
+        for i, item in enumerate(menu_items):
+            if item['type'] == 'item':
+                prefix = "→ " if i == selected_index else "   "
+                if item['text'] == "Regresar":
+                    console.print(f"{prefix}0. {item['text']}")
+                else:
+                    console.print(f"{prefix}{current_display_num}. {item['text']}")
+                    current_display_num += 1
+
+    ch = ''  # Inicializa ch
+
+    while ch != 'q':
+        display_menu(selected_index)
+        ch = getch()  # Lee un carácter de la entrada
+
+        # Procesa las teclas
+        if ord(ch) == 224:  # Teclas especiales (flechas, etc.)
+            ch = getch()  # Lee el siguiente carácter para obtener el código de la flecha
+            ascii_value = ord(ch)
+            if ascii_value == 72:  # Flecha arriba
+                # Mover hacia arriba
+                new_index = selected_index
+                while True:
+                    new_index = (new_index - 1 + len(menu_items)) % len(menu_items)
+                    if menu_items[new_index]['type'] == 'item':
+                        selected_index = new_index
+                        break
+            elif ascii_value == 80:  # Flecha abajo
+                # Mover hacia abajo
+                new_index = selected_index
+                while True:
+                    new_index = (new_index + 1) % len(menu_items)
+                    if menu_items[new_index]['type'] == 'item':
+                        selected_index = new_index
+                        break
+        elif ord(ch) == 13:  # Enter
+            selected_option = menu_items[selected_index]
+            clear_screen()
+            if selected_option['text'] == "Regresar":
                 break
-            else:
-                clear_screen()
-                print(f"Has seleccionado: {menu_options[opcion_main_menu]}")
-                # Llama a la función asociada a la opción seleccionada
-                option_functions = {
-                    "1": test_session,
-                    "2": option_2,
-                    "3": answer_quiz_daily_contest_actinver,
-                    "4": start_scheduled_quiz,
-                    "5": answer_quiz_weekly_contest_actinver,
-                    "6": start_scheduled_weekly_quiz,
-                    "7": option_5,
-                    "8": option_6,
-                    "9": option_7,
-                    "10": option_8,
-                    "11": option_9,
-                    "12": test_session0,
-                    "13": test_session1,
-                    "14": list_tasks_scheduled,
-                }
-                option_functions[opcion_main_menu]()
+            selected_option['action']()
+            Prompt.ask("[bold blue]Pulsa Enter para continuar...[/bold blue]")
+        elif ch == b'q':
+            break
+        elif ch == b':':
+            opcion_main_menu = Prompt.ask("[bold green] cmd [/bold green]")        
+            if opcion_main_menu in (':q', ':quit', 'q', 'quit'):
+                break
+            if opcion_main_menu in (':b', ':back', 'b', 'back'):
+                # no-op, solo regresar a pintar el menú
+                continue
+            try:
+                if opcion_main_menu.startswith(':'):
+                    opcion_main_menu = opcion_main_menu[1:]
+                
+                if opcion_main_menu == 'q': # Manejar 'q' como salir
+                    break
+                
+                # Usar el mapeo num_to_index para obtener el índice real del menú
+                if opcion_main_menu in num_to_index:
+                    actual_index = num_to_index[opcion_main_menu]
+                    selected_option = menu_items[actual_index]
+                    clear_screen()                    
+                    if selected_option['text'] == "Regresar":
+                        break
+                    selected_option['action']()  
+                    Prompt.ask("[bold blue]Pulsa Enter para continuar...[/bold blue]")                 
+                else:
+                    console.print(f"[bold red]Opción incorrecta...[/bold red]")
+                    Prompt.ask("[bold blue]Pulsa Enter para continuar...[/bold blue]")
+            except ValueError:
+                console.print(f"[bold red]Entrada no válida. Por favor, introduce un número o comando válido...[/bold red]")
                 Prompt.ask("[bold blue]Pulsa Enter para continuar...[/bold blue]")
 
 
@@ -8037,10 +8234,12 @@ def daily_visual_report():
     # Abrir en navegador
     try:
         import webbrowser
-        webbrowser.open(filename)
-        console.print("[bold blue]🌐 Abriendo reporte en navegador...[/bold blue]")
-    except:
-        console.print("[yellow]💡 Abre manualmente el archivo HTML en tu navegador[/yellow]")
+        from pathlib import Path
+        file_uri = Path(filename).resolve().as_uri()
+        webbrowser.open(file_uri)
+        console.print(f"[bold blue]🌐 Abriendo reporte en navegador: {file_uri}[/bold blue]")
+    except Exception as e:
+        console.print(f"[yellow]💡 No se pudo abrir automáticamente ({e}). Abre el archivo: {filename}[/yellow]")
 
 
 def process_market_data_visual(data):
@@ -8096,9 +8295,29 @@ def process_market_data_visual(data):
             volume_val = float(volume.iloc[-1])
             
             # === MEJORAS: MÚLTIPLES PLAZOS DE MOMENTUM ===
-            momentum_1d = (close_val - prev_close_val) / prev_close_val * 100
-            momentum_1w = (close_val - float(close.iloc[-6])) / float(close.iloc[-6]) * 100 if len(close) >= 6 else momentum_1d
-            momentum_1m = (close_val - float(close.iloc[-21])) / float(close.iloc[-21]) * 100 if len(close) >= 21 else momentum_1w
+            # Momentum robusto (evita NaN/inf por divisores 0 o datos insuficientes)
+            if np.isfinite(prev_close_val) and prev_close_val != 0:
+                momentum_1d = (close_val - prev_close_val) / prev_close_val * 100.0
+            else:
+                momentum_1d = 0.0
+
+            if len(close) >= 6:
+                base_1w = float(close.iloc[-6])
+                if np.isfinite(base_1w) and base_1w != 0:
+                    momentum_1w = (close_val - base_1w) / base_1w * 100.0
+                else:
+                    momentum_1w = momentum_1d
+            else:
+                momentum_1w = momentum_1d
+
+            if len(close) >= 21:
+                base_1m = float(close.iloc[-21])
+                if np.isfinite(base_1m) and base_1m != 0:
+                    momentum_1m = (close_val - base_1m) / base_1m * 100.0
+                else:
+                    momentum_1m = momentum_1w
+            else:
+                momentum_1m = momentum_1w
             
             # === MEJORAS: INDICADORES TÉCNICOS AVANZADOS ===
             # RSI (Relative Strength Index)
@@ -8405,13 +8624,44 @@ def generate_html_dashboard_visual(analysis_data, symbols, category_name):
         
         # Resumen Ejecutivo Automático
         executive_summary = generate_executive_summary(analysis_data)
+        # Saneamiento: evitar 'nan' en textos de momentum del resumen
+        try:
+            if isinstance(executive_summary, str) and ("nan" in executive_summary.lower()):
+                raise ValueError("Resumen contiene NaN, usar fallback limpio")
+        except Exception:
+            pass
         
     except Exception as e:
         console.print(f"[yellow]⚠️ Usando gráficos básicos: {e}[/yellow]")
         correlation_html = "<div>Matriz de correlación no disponible</div>"
         relative_strength_html = "<div>Fuerza relativa no disponible</div>"
         market_overview_html = "<div>Vista de mercado no disponible</div>"
-        executive_summary = "<div>Resumen ejecutivo no disponible</div>"
+        executive_summary = None
+
+    # Fallback/override de resumen ejecutivo libre de NaN
+    try:
+        # Construir Top 3 Momentum 1 semana sin NaN/inf
+        if 'momentum_1w' in df.columns:
+            df_clean = df.copy()
+            df_clean['momentum_1w'] = pd.to_numeric(df_clean['momentum_1w'], errors='coerce')
+            df_clean = df_clean.replace([np.inf, -np.inf], np.nan).dropna(subset=['momentum_1w'])
+            top3 = df_clean['momentum_1w'].sort_values(ascending=False).head(3)
+            items = [f"{sym} ({val:+.1f}%)" for sym, val in top3.items()]
+            top3_text = ' , '.join(items) if items else 'N/D'
+        else:
+            top3_text = 'N/D'
+
+        # Si el resumen original falta o tenía NaN, usar uno limpio
+        if not executive_summary or (isinstance(executive_summary, str) and ("nan" in executive_summary.lower())):
+            executive_summary = f"""
+            <div class=\"legend\">
+                <h3>🧭 Resumen Ejecutivo</h3>
+                <p>🚀 Top 3 Momentum (1 semana): {top3_text}</p>
+            </div>
+            """
+    except Exception:
+        if not executive_summary:
+            executive_summary = "<div class=\"legend\"><h3>🧭 Resumen Ejecutivo</h3><p>Datos insuficientes para momentum.</p></div>"
     
     # Generar resúmenes mejorados
     buy_signals = [symbol for symbol, data in analysis_data.items() if data.get('buy_signal', False)]
@@ -8850,80 +9100,508 @@ else:
  
 
 
-def main():
-    selected_index = 0  # Índice inicial para la opción seleccionada
+def monitor_stocks_gui(update_interval_ms: int = 3000, top_n: int = 15):
+    """
+    Monitor de Stocks con GUI (Windows) usando Tkinter.
+    - Layout: Sección superior (gráficas) + Sección inferior (tabla detallada)
+    - Selector: Top 10, Todas, Ticker específico
+    - Gráficas dinámicas según selección
+    """
+    try:
+        import tkinter as tk
+        from tkinter import ttk
+        from collections import defaultdict, deque
+        from urllib.request import urlopen
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        from matplotlib.figure import Figure
+        import re
+        from datetime import datetime
+    except Exception as e:
+        console.print(f"[red]❌ No se pudo iniciar la GUI: {e}[/red]")
+        return
 
-    # Definición del menú dentro de main
-    menu_options = [
-        ("Análisis técnico rápido: Algoritmo Pairs Trading con ETFs Apalancados", pairs_trading_etf_leveraged),
-       ("Análisis técnico rápido: Sugerir ETFs apalancados para compra-venta usando estrategia swing trading por indicadores técnicos", suggest_technical_etf_leveraged),
-        ("Análisis técnico rápido: Sugerir ETFs para compra-venta usando estrategia swing trading por indicadores técnicos", suggest_technical_etf),
-        ("Análisis fundamental: Sugerir acciones para seguimiento usando análisis por sector", fundamental_analysis),
-        ("Análisis preferencias: Sugerir acciones para seguimiento según preferencias", suggest_stocks_by_preferences),
-        ("Análisis sentimientos: Sugerir consideraciones sobre acciones en seguimiento según noticias actuales", news_analysis),
-        ("Análisis técnico: Sugerir acciones para compra-venta usando estrategia swing trading por publicación próxima de resultados)", suggest_technical_soon_results),
-        ("Análisis técnico: Sugerir acciones para compra-venta usando estrategia swing trading por indicadores técnicos", suggest_technical),
-        ("Análisis técnico: Sugerir acciones para compra-venta usando estrategia swing trading de consensos técnicos web", swing_trading_strategy),
-        ("Análisis técnico: Sugerir acciones para compra-venta usando estrategia swing trading con machine learning", swing_trading_strategy_machine),
-        ("Análisis técnico (Beta 1): Hipótesis de acciones para compra-venta usando estrategia swing trading doble negativo", suggest_technical_beta1),
-        ("Análisis técnico (Beta 2): Hipótesis de acciones para compra-venta usando estrategia swing trading positivo-negativo-positivo", suggest_technical_beta2),
-        ("Análisis cuantitativo: Asignación de Capital Basada en Volatilidad (Gestión de Riesgo Avanzada)", volatility_based_capital_allocation),
-        ("Análisis cuantitativo: Sugerir distribución de portafolio a partir de optimización de la Razón de Sharpe Ajustada para Corto Plazo", set_optimizar_portafolio2),
-        ("Análisis cuantitativo: Sugerir distribución de portafolio a partir de optimización Markowitz", set_optimizar_portafolio),
-        ("Análisis cuantitativo: Sugerir distribución de portafolio a partir de optimización Litterman", set_optimizar_portafolio),
-        ("Utilidades (Reto Actinver 2024)", utilidades_actinver_2024), 
-        ("Monitor de Stocks", monitor_stocks),
-        ("Reporte Visual", daily_visual_report),
-        ("Imprimir Consejos", imprimir_consejos_inversion),
-        ("Salir", None),  # La opción de salir ya no tiene número
+    root = tk.Tk()
+    root.title("Monitor de Stocks - Reto Actinver (GUI)")
+    root.geometry("1600x1000")
+
+    # Layout principal: superior (gráficas) | inferior (tabla)
+    top_frame = ttk.Frame(root)
+    bottom_frame = ttk.Frame(root)
+    top_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+    bottom_frame.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True)
+
+    # Selector en la parte superior
+    selector_frame = ttk.Frame(top_frame)
+    selector_frame.pack(fill=tk.X, padx=10, pady=5)
+    
+    ttk.Label(selector_frame, text="Modo:").pack(side=tk.LEFT, padx=5)
+    mode_var = tk.StringVar(value="Top 10")
+    mode_combo = ttk.Combobox(selector_frame, textvariable=mode_var, 
+                              values=["Top 10","Ticker específico"], 
+                              state="readonly", width=15)
+    mode_combo.pack(side=tk.LEFT, padx=5)
+    
+    ttk.Label(selector_frame, text="Ticker:").pack(side=tk.LEFT, padx=5)
+    ticker_var = tk.StringVar(value="AAPL")
+    ticker_combo = ttk.Combobox(selector_frame, textvariable=ticker_var, values=[], state="readonly", width=14)
+    ticker_combo.pack(side=tk.LEFT, padx=5)
+
+    # Gráficas en la sección superior
+    fig = Figure(figsize=(16, 8), dpi=100)
+    canvas = FigureCanvasTkAgg(fig, master=top_frame)
+    canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    # Tabla detallada en la sección inferior
+    columns = ("symbol", "market", "open", "close", "change_pct", "change_abs", "volume", "ops", 
+               "high", "low", "vol_buy", "vol_sell", "avg_price", "trend", "spread", "buy_vol", 
+               "buy_price", "sell_vol", "sell_price")
+    tree = ttk.Treeview(bottom_frame, columns=columns, show="headings")
+    
+    headers = ["Símbolo", "Mercado", "Apertura", "Cierre", "%", "$", "Volumen", "Ops", 
+               "Máximo", "Mínimo", "Vol Compra", "Vol Venta", "Precio Prom", "Tendencia", 
+               "Spread", "Vol Compra Act", "Precio Compra", "Vol Venta Act", "Precio Venta"]
+    
+    for col, text in zip(columns, headers):
+        tree.heading(col, text=text)
+        tree.column(col, anchor=tk.CENTER, width=80)
+    tree.pack(fill=tk.BOTH, expand=True)
+
+    # Scrollbar para la tabla
+    scrollbar = ttk.Scrollbar(bottom_frame, orient=tk.VERTICAL, command=tree.yview)
+    tree.configure(yscrollcommand=scrollbar.set)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+    # Estado
+    price_history = defaultdict(lambda: deque(maxlen=200))
+    ohlc_history = defaultdict(lambda: deque(maxlen=100))  # Para velas
+    all_records = []
+    symbols_cache = []
+
+    def _get_company_name(symbol):
+        """Mapea símbolos a nombres de empresas conocidas"""
+        company_names = {
+            'AAPL': 'Apple', 'MSFT': 'Microsoft', 'GOOGL': 'Google', 'AMZN': 'Amazon',
+            'TSLA': 'Tesla', 'META': 'Meta', 'NVDA': 'NVIDIA', 'NFLX': 'Netflix',
+            'ALFA': 'Alfa', 'CEMEX': 'Cemex', 'FEMSA': 'Femsa', 'WALMEX': 'Walmart México',
+            'AMX': 'América Móvil', 'GFNORTE': 'Grupo Financiero Banorte', 'BIMBO': 'Grupo Bimbo',
+            'GCARSO': 'Grupo Carso', 'KOF': 'Coca-Cola FEMSA', 'LAB': 'Laboratorios',
+            'ORBIA': 'Orbia', 'PE&OLES': 'Peñoles', 'VESTA': 'Vesta', 'VOLAR': 'Controladora Vuela',
+            'SPY': 'SPDR S&P 500', 'QQQ': 'Invesco QQQ', 'VTI': 'Vanguard Total Stock',
+            'GLD': 'SPDR Gold', 'SLV': 'iShares Silver', 'XLK': 'Technology Select Sector',
+            'XLF': 'Financial Select Sector', 'XLE': 'Energy Select Sector', 'XLV': 'Health Care Select',
+            'SOXL': 'Direxion Daily Semiconductor', 'TQQQ': 'ProShares UltraPro QQQ',
+            'SPXL': 'Direxion Daily S&P 500', 'FAS': 'Direxion Daily Financial Bull',
+            'FAZ': 'Direxion Daily Financial Bear', 'TECL': 'Direxion Daily Technology',
+            'TECS': 'Direxion Daily Technology Bear', 'TNA': 'Direxion Daily Small Cap Bull',
+            'SQQQ': 'ProShares UltraPro Short QQQ', 'SPXS': 'Direxion Daily S&P 500 Bear',
+            'SOXS': 'Direxion Daily Semiconductor Bear', 'TZA': 'Direxion Daily Small Cap Bear'
+        }
+        return company_names.get(symbol, symbol)
+
+    def _parse_reto_data_complete(raw_data):
+        """Parsea todos los campos del formato del Reto Actinver"""
+        records = []
+        try:
+            entries = raw_data.strip().split()
+            for entry in entries:
+                if not entry.strip():
+                    continue
+                parts = entry.split('|')
+                if len(parts) >= 21:  # Asegurar que tenemos todos los campos
+                    try:
+                        symbol = parts[1]
+                        records.append({
+                            'market': parts[0],           # 1. Identificador de mercado
+                            'symbol': symbol,             # 2. Símbolo
+                            'company_name': _get_company_name(symbol), # Nombre de la empresa
+                            'separator': parts[2],        # 3. Separador
+                            'open': float(parts[3]),      # 4. Precio apertura
+                            'close': float(parts[4]),     # 5. Precio cierre
+                            'trend_ind': int(parts[5]),   # 6. Indicador variación
+                            'volume': float(parts[6]),    # 7. Volumen total
+                            'operations': int(parts[7]),  # 8. Cantidad operaciones
+                            'high': float(parts[8]),      # 9. Precio máximo
+                            'low': float(parts[9]),       # 10. Precio mínimo
+                            'vol_buy': float(parts[10]),  # 11. Volumen compra
+                            'vol_sell': float(parts[11]), # 12. Volumen venta
+                            'avg_price': float(parts[12]), # 13. Precio promedio ponderado
+                            'change_pct': float(parts[13]), # 14. Variación porcentual
+                            'trend': int(parts[14]),      # 15. Indicador tendencia
+                            'change_abs': float(parts[15]), # 16. Variación absoluta
+                            'market_status': int(parts[16]), # 17. Estado mercado
+                            'buy_vol_curr': float(parts[17]), # 18. Vol compra actual
+                            'buy_price_curr': float(parts[18]), # 19. Precio compra actual
+                            'sell_vol_curr': float(parts[19]), # 20. Vol venta actual
+                            'sell_price_curr': float(parts[20]) # 21. Precio venta actual
+                        })
+                    except (ValueError, IndexError):
+                        continue
+        except Exception as e:
+            print(f"Error parsing data: {e}")
+        return records
+
+    def _fetch_records():
+        try:
+            raw = urlopen('https://www.retoactinver.com/archivos/datosReto.txt', timeout=10).read().decode('utf-8', errors='ignore')
+            return _parse_reto_data_complete(raw)
+        except Exception as e:
+            print(f"Error fetching data: {e}")
+            return []
+
+    def _update_ui():
+        nonlocal all_records, symbols_cache
+        all_records = _fetch_records()
+        if not all_records:
+            root.after(update_interval_ms, _update_ui)
+            return
+
+        # Actualizar lista de símbolos del combobox si cambió
+        symbols_now = sorted({r['symbol'] for r in all_records})
+        if symbols_now != symbols_cache:
+            symbols_cache = symbols_now
+            try:
+                ticker_combo['values'] = symbols_cache
+            except Exception:
+                pass
+
+        # Actualizar tabla según modo seleccionado
+        mode = mode_var.get()
+        records_to_show = all_records.copy()
+        
+        if mode == "Top 10":
+            records_to_show = sorted(all_records, key=lambda r: r['change_pct'], reverse=True)[:10]
+        elif mode == "Ticker específico":
+            sel = ticker_var.get().strip().upper()
+            if sel:
+                records_to_show = [r for r in all_records if r['symbol'].upper() == sel]
+            else:
+                records_to_show = []
+        
+        # Limpiar y llenar tabla
+        for row in tree.get_children():
+            tree.delete(row)
+        for r in records_to_show:
+            spread = r['sell_price_curr'] - r['buy_price_curr']
+            tree.insert('', tk.END, values=(
+                r['symbol'], r['market'], f"{r['open']:.2f}", f"{r['close']:.2f}",
+                f"{r['change_pct']:.2f}", f"{r['change_abs']:.2f}", f"{r['volume']:.0f}",
+                r['operations'], f"{r['high']:.2f}", f"{r['low']:.2f}",
+                f"{r['vol_buy']:.0f}", f"{r['vol_sell']:.0f}", f"{r['avg_price']:.2f}",
+                r['trend'], f"{spread:.2f}", f"{r['buy_vol_curr']:.0f}",
+                f"{r['buy_price_curr']:.2f}", f"{r['sell_vol_curr']:.0f}", f"{r['sell_price_curr']:.2f}"
+            ))
+
+        # Actualizar gráficas según modo
+        fig.clear()
+        mode = mode_var.get()
+        
+        if mode == "Top 10":
+            # 4 gráficas: Ganadores, Perdedores, Volumen, Presión compradora
+            ax1 = fig.add_subplot(2, 2, 1)
+            ax2 = fig.add_subplot(2, 2, 2)
+            ax3 = fig.add_subplot(2, 2, 3)
+            ax4 = fig.add_subplot(2, 2, 4)
+            
+            # Top 10 Ganadores
+            top_g = sorted(all_records, key=lambda r: r['change_pct'], reverse=True)[:10]
+            if top_g:
+                labels_g = [r['symbol'] for r in top_g]
+                values_g = [r['change_pct'] for r in top_g]
+                bars_g = ax1.bar(range(len(labels_g)), values_g, color='green', alpha=0.7)
+                ax1.set_title('Top 10 Ganadores (%)')
+                ax1.set_xticks(range(len(labels_g)))
+                ax1.set_xticklabels(labels_g, rotation=45, ha='right', fontsize=9)
+                ax1.grid(True, alpha=0.3)
+                
+                # Agregar nombres como texto en las barras
+                for i, (bar, record) in enumerate(zip(bars_g, top_g)):
+                    height = bar.get_height()
+                    ax1.text(bar.get_x() + bar.get_width()/2., height + height*0.02,
+                            f"{record['company_name']}", 
+                            ha='center', va='bottom',
+                            fontsize=7, rotation=0)
+
+            # Top 10 Perdedores
+            top_l = sorted(all_records, key=lambda r: r['change_pct'])[:10]
+            if top_l:
+                labels_l = [r['symbol'] for r in top_l]
+                values_l = [r['change_pct'] for r in top_l]
+                bars_l = ax2.bar(range(len(labels_l)), values_l, color='red', alpha=0.7)
+                ax2.set_title('Top 10 Perdedores (%)')
+                ax2.set_xticks(range(len(labels_l)))
+                ax2.set_xticklabels(labels_l, rotation=45, ha='right', fontsize=9)
+                ax2.grid(True, alpha=0.3)
+                
+                # Agregar nombres como texto en las barras
+                for i, (bar, record) in enumerate(zip(bars_l, top_l)):
+                    height = bar.get_height()
+                    y_pos = height - abs(height)*0.02  # Posicionar debajo de la barra
+                    ax2.text(bar.get_x() + bar.get_width()/2., y_pos,
+                            f"{record['company_name']}", 
+                            ha='center', va='top',
+                            fontsize=7, rotation=0)
+
+            # Top 10 Volumen
+            top_v = sorted(all_records, key=lambda r: r['volume'], reverse=True)[:10]
+            if top_v:
+                labels_v = [r['symbol'] for r in top_v]
+                values_v = [r['volume'] for r in top_v]
+                bars_v = ax3.bar(range(len(labels_v)), values_v, color='blue', alpha=0.7)
+                ax3.set_title('Top 10 por Volumen')
+                ax3.set_xticks(range(len(labels_v)))
+                ax3.set_xticklabels(labels_v, rotation=45, ha='right', fontsize=9)
+                ax3.grid(True, alpha=0.3)
+                
+                # Agregar nombres como texto en las barras
+                for i, (bar, record) in enumerate(zip(bars_v, top_v)):
+                    height = bar.get_height()
+                    ax3.text(bar.get_x() + bar.get_width()/2., height + height*0.02,
+                            f"{record['company_name']}", 
+                            ha='center', va='bottom',
+                            fontsize=7, rotation=0)
+
+            # Top 10 Presión Compradora (ratio compra/venta)
+            top_p = sorted(all_records, key=lambda r: r['vol_buy']/r['vol_sell'] if r['vol_sell'] > 0 else 0, reverse=True)[:10]
+            if top_p:
+                labels_p = [r['symbol'] for r in top_p]
+                values_p = [r['vol_buy']/r['vol_sell'] if r['vol_sell'] > 0 else 0 for r in top_p]
+                bars_p = ax4.bar(range(len(labels_p)), values_p, color='orange', alpha=0.7)
+                ax4.set_title('Top 10 Presión Compradora (Compra/Venta)')
+                ax4.set_xticks(range(len(labels_p)))
+                ax4.set_xticklabels(labels_p, rotation=45, ha='right', fontsize=9)
+                ax4.grid(True, alpha=0.3)
+                
+                # Agregar nombres como texto en las barras
+                for i, (bar, record) in enumerate(zip(bars_p, top_p)):
+                    height = bar.get_height()
+                    ax4.text(bar.get_x() + bar.get_width()/2., height + height*0.02,
+                            f"{record['company_name']}", 
+                            ha='center', va='bottom',
+                            fontsize=7, rotation=0)
+
+        elif mode == "Todas":
+            # 2 gráficas: TODAS las variaciones y TODAS por volumen
+            ax1 = fig.add_subplot(1, 2, 1)
+            ax2 = fig.add_subplot(1, 2, 2)
+            
+            # TODAS las variaciones (ordenadas por cambio porcentual)
+            sorted_by_change = sorted(all_records, key=lambda r: r['change_pct'], reverse=True)
+            
+            # Usar nombres completos en las etiquetas del eje X
+            labels_all = [f"{r['symbol']}\n{r['company_name']}" for r in sorted_by_change]
+            values_all = [r['change_pct'] for r in sorted_by_change]
+            colors = ['green' if v >= 0 else 'red' for v in values_all]
+            
+            bars = ax1.bar(range(len(labels_all)), values_all, color=colors, alpha=0.7)
+            ax1.set_title('Todas las Variaciones del Día (%)')
+            ax1.set_xticks(range(len(labels_all)))
+            ax1.set_xticklabels(labels_all, rotation=45, ha='right', fontsize=6)
+            ax1.grid(True, alpha=0.3)
+            
+            # Agregar línea en 0%
+            ax1.axhline(y=0, color='black', linestyle='-', alpha=0.5)
+
+            # TODAS por volumen (ordenadas por volumen)
+            sorted_by_volume = sorted(all_records, key=lambda r: r['volume'], reverse=True)
+            labels_vol = [f"{r['symbol']}\n{r['company_name']}" for r in sorted_by_volume]
+            values_vol = [r['volume'] for r in sorted_by_volume]
+            
+            bars_vol = ax2.bar(range(len(labels_vol)), values_vol, color='blue', alpha=0.7)
+            ax2.set_title('Todas por Volumen')
+            ax2.set_xticks(range(len(labels_vol)))
+            ax2.set_xticklabels(labels_vol, rotation=45, ha='right', fontsize=6)
+            ax2.grid(True, alpha=0.3)
+
+        elif mode == "Ticker específico":
+            # 4 gráficas específicas del ticker
+            ax1 = fig.add_subplot(2, 2, 1)
+            ax2 = fig.add_subplot(2, 2, 2)
+            ax3 = fig.add_subplot(2, 2, 3)
+            ax4 = fig.add_subplot(2, 2, 4)
+            
+            sel = ticker_var.get().strip().upper()
+            if sel:
+                ticker_data = next((r for r in all_records if r['symbol'].upper() == sel), None)
+                if ticker_data:
+                    # 1. Sparkline de precio
+                    price_history[sel].append(ticker_data['close'])
+                    series = list(price_history[sel])
+                    if series:
+                        ax1.plot(series, color='purple', linewidth=2)
+                        min_v = min(series)
+                        max_v = max(series)
+                        if min_v == max_v:
+                            min_v *= 0.99
+                            max_v *= 1.01
+                        margin = (max_v - min_v) * 0.05
+                        ax1.set_ylim(min_v - margin, max_v + margin)
+                        ax1.set_title(f'Sparkline Precio - {sel}')
+                        ax1.grid(True, alpha=0.3)
+
+                    # 2. Gráfico de velas (simulado con OHLC actual)
+                    ohlc_data = [ticker_data['open'], ticker_data['high'], ticker_data['low'], ticker_data['close']]
+                    ohlc_history[sel].append(ohlc_data)
+                    if len(ohlc_history[sel]) > 1:
+                        # Simular velas con datos históricos
+                        times = range(len(ohlc_history[sel]))
+                        opens = [d[0] for d in ohlc_history[sel]]
+                        highs = [d[1] for d in ohlc_history[sel]]
+                        lows = [d[2] for d in ohlc_history[sel]]
+                        closes = [d[3] for d in ohlc_history[sel]]
+                        
+                        ax2.plot(times, opens, 'b-', label='Apertura', alpha=0.7)
+                        ax2.plot(times, highs, 'g-', label='Máximo', alpha=0.7)
+                        ax2.plot(times, lows, 'r-', label='Mínimo', alpha=0.7)
+                        ax2.plot(times, closes, 'k-', label='Cierre', linewidth=2)
+                        ax2.set_title(f'OHLC - {sel}')
+                        ax2.legend()
+                        ax2.grid(True, alpha=0.3)
+
+                    # 3. Precio actual vs Precio promedio ponderado
+                    current_price = ticker_data['close']
+                    avg_price = ticker_data['avg_price']
+                    ax3.bar(['Precio Actual', 'Precio Promedio'], [current_price, avg_price], 
+                           color=['blue', 'orange'], alpha=0.7)
+                    ax3.set_title(f'Precio Actual vs Promedio - {sel}')
+                    ax3.grid(True, alpha=0.3)
+
+                    # 4. Spread compra/venta
+                    spread = ticker_data['sell_price_curr'] - ticker_data['buy_price_curr']
+                    ax4.bar(['Spread'], [spread], color='red', alpha=0.7)
+                    ax4.set_title(f'Spread Compra/Venta - {sel}')
+                    ax4.grid(True, alpha=0.3)
+                else:
+                    for ax in [ax1, ax2, ax3, ax4]:
+                        ax.text(0.5, 0.5, f"No hay datos para {sel}", 
+                               ha='center', va='center', transform=ax.transAxes)
+
+        fig.tight_layout()
+        canvas.draw()
+        root.after(update_interval_ms, _update_ui)
+
+    # Bindings para refrescar al cambiar modo/ticker
+    def _on_mode_change(event=None):
+        _update_ui()
+    def _on_ticker_change(event=None):
+        if mode_var.get() != "Ticker específico":
+            mode_var.set("Ticker específico")
+        _update_ui()
+    mode_combo.bind('<<ComboboxSelected>>', _on_mode_change)
+    ticker_combo.bind('<<ComboboxSelected>>', _on_ticker_change)
+
+    # Primer disparo
+    root.after(100, _update_ui)
+    try:
+        root.mainloop()
+    except KeyboardInterrupt:
+        try:
+            root.destroy()
+        except Exception:
+            pass
+
+
+def main():
+    # Construcción del menú con secciones
+    menu_items = [
+        { 'type': 'header', 'text': 'Análisis rápido' },
+        { 'type': 'item', 'text': 'Análisis técnico rápido: Algoritmo Pairs Trading con ETFs Apalancados', 'action': pairs_trading_etf_leveraged },
+        { 'type': 'item', 'text': 'Análisis técnico rápido: Sugerir ETFs apalancados para compra-venta usando estrategia swing trading por indicadores técnicos', 'action': suggest_enhanced_etf_strategy_leveraged },
+        { 'type': 'item', 'text': 'Análisis técnico rápido: Sugerir ETFs para compra-venta usando estrategia swing trading por indicadores técnicos', 'action': suggest_enhanced_etf_strategy },
+
+        { 'type': 'header', 'text': 'Análisis fundamental' },
+        { 'type': 'item', 'text': 'Análisis fundamental: Sugerir acciones para seguimiento usando análisis por sector', 'action': fundamental_analysis },
+
+        { 'type': 'header', 'text': 'Análisis preferencias' },
+        { 'type': 'item', 'text': 'Análisis preferencias: Sugerir acciones para seguimiento según preferencias', 'action': suggest_stocks_by_preferences },
+
+        { 'type': 'header', 'text': 'Análisis sentimientos' },
+        { 'type': 'item', 'text': 'Análisis sentimientos: Sugerir consideraciones sobre acciones en seguimiento según noticias actuales', 'action': news_analysis },
+
+        { 'type': 'header', 'text': 'Análisis técnico' },
+        { 'type': 'item', 'text': 'Análisis técnico: Sugerir acciones para compra-venta usando estrategia swing trading por publicación próxima de resultados', 'action': suggest_technical_soon_results },
+        { 'type': 'item', 'text': 'Análisis técnico: Sugerir acciones para compra-venta usando estrategia swing trading por indicadores técnicos', 'action': suggest_technical },
+        { 'type': 'item', 'text': 'Análisis técnico: Sugerir acciones para compra-venta usando estrategia swing trading de consensos técnicos (web scraping)', 'action': swing_trading_strategy },
+        { 'type': 'item', 'text': 'Análisis técnico: Sugerir acciones para compra-venta usando estrategia swing trading con machine learning', 'action': swing_trading_strategy_machine },
+        { 'type': 'item', 'text': 'Análisis técnico (Beta 1): Hipótesis de acciones para compra-venta usando estrategia swing trading doble negativo', 'action': suggest_technical_beta1 },
+        { 'type': 'item', 'text': 'Análisis técnico (Beta 2): Hipótesis de acciones para compra-venta usando estrategia swing trading positivo-negativo-positivo', 'action': suggest_technical_beta2 },
+
+        { 'type': 'header', 'text': 'Análisis cuantitativo' },
+        { 'type': 'item', 'text': 'Análisis cuantitativo: Asignación de Capital Basada en Volatilidad (Gestión de Riesgo Avanzada)', 'action': volatility_based_capital_allocation },
+        { 'type': 'item', 'text': 'Análisis cuantitativo: Sugerir distribución de portafolio a partir de optimización de la Razón de Sharpe Ajustada para Corto Plazo', 'action': set_optimizar_portafolio2 },
+        { 'type': 'item', 'text': 'Análisis cuantitativo: Sugerir distribución de portafolio a partir de optimización Markowitz', 'action': set_optimizar_portafolio },
+        { 'type': 'item', 'text': 'Análisis cuantitativo: Sugerir distribución de portafolio a partir de optimización Litterman', 'action': set_optimizar_portafolio },
+        { 'type': 'item', 'text': 'Análisis cuantitativo: Estrategia de Acumulación Intradía (Scaling In) - Entrada Escalonada', 'action': lambda: estrategia_acumulacion_intraday_menu() },
+        { 'type': 'item', 'text': 'Análisis cuantitativo: Estrategia de Acumulación ROBUSTA con Múltiples Fuentes de Datos', 'action': lambda: estrategia_acumulacion_intraday_menu() },
+        { 'type': 'item', 'text': 'Análisis cuantitativo: Caza de Soportes Intradía - Identificación de Niveles Clave', 'action': lambda: caza_soportes_intraday() },
+        { 'type': 'item', 'text': 'Análisis cuantitativo: Reversión a la Media con Bandas de Bollinger - ETFs Apalancados', 'action': lambda: reversion_media_bollinger() },
+        { 'type': 'item', 'text': 'Análisis cuantitativo: COMPLETO - Todas las Estrategias Integradas', 'action': lambda: analisis_cuantitativo_completo() },
+
+        { 'type': 'header', 'text': 'Utilidades' },
+        { 'type': 'item', 'text': 'Utilidades (Reto Actinver 2025)', 'action': utilidades_actinver_2024 },
+        { 'type': 'exit', 'text': 'Salir' },
     ]
 
-    def display_menu(selected_index):
+    # Índices seleccionables (excluye headers y exit)
+    selectable_indices = [i for i, it in enumerate(menu_items) if it['type'] == 'item']
+    selected_pos = 0  # posición en selectable_indices
+
+    def display_menu():
         console.clear()
         console.print("[bold blue]Menú de Opciones:[/bold blue]")
-        for i, (option_text, _) in enumerate(menu_options):
-            if option_text == "Salir":
-                prefix = "→ " if i == selected_index else "   "
-                console.print(f"{prefix}q. {option_text}")  # Usar 'q' para la opción de salir
-            else:
-                prefix = "→ " if i == selected_index else "   "
-                console.print(f"{prefix}{i + 1}. {option_text}")  # Usar número para otras opciones
+        number_map = {}
+        current_number = 1
+        for i, it in enumerate(menu_items):
+            if it['type'] == 'header':
+                console.print(it['text'])
+            elif it['type'] == 'item':
+                is_selected = (selectable_indices[selected_pos] == i)
+                prefix = "→ " if is_selected else "   "
+                console.print(f"{prefix}{current_number}. {it['text']}")
+                number_map[current_number] = i
+                current_number += 1
+            elif it['type'] == 'exit':
+                is_selected = False
+                console.print(f"   q. {it['text']}")
+        return number_map
 
-    ch = ''  # Inicializa ch
-
+    ch = ''
     while ch != 'q':
-        display_menu(selected_index)
-        ch = getch()  # Lee un carácter de la entrada
-
-        # Imprime el valor ASCII del carácter
+        number_map = display_menu()
+        ch = getch()
         ascii_value = ord(ch)
-        
-        # Procesa las teclas
-        if ascii_value == 224:  # Teclas especiales (flechas, etc.)
-            ch = getch()  # Lee el siguiente carácter para obtener el código de la flecha
+
+        if ascii_value == 224:
+            ch = getch()
             ascii_value = ord(ch)
-            if ascii_value == 72:  # Flecha arriba
-                selected_index = (selected_index - 1) % len(menu_options)
-            elif ascii_value == 80:  # Flecha abajo
-                selected_index = (selected_index + 1) % len(menu_options)
+            if ascii_value == 72:  # up
+                selected_pos = (selected_pos - 1) % len(selectable_indices)
+            elif ascii_value == 80:  # down
+                selected_pos = (selected_pos + 1) % len(selectable_indices)
         elif ascii_value == 13:  # Enter
-            selected_option = menu_options[selected_index]
+            idx = selectable_indices[selected_pos]
+            action = menu_items[idx]['action']
             clear_screen()
-            selected_option[1]()
+            action()
             Prompt.ask("[bold blue]Pulsa Enter para continuar...[/bold blue]")
         elif ch == b'q':
             exit_program()
         elif ch == b':':
-            opcion_main_menu = Prompt.ask("[bold green] cmd [/bold green]")        
-            if opcion_main_menu == 'quit':
-                exit_program() 
+            opcion_main_menu = Prompt.ask("[bold green] cmd [/bold green]")
+            if opcion_main_menu in (':q', ':quit', 'q', 'quit'):
+                exit_program()
+            if opcion_main_menu in (':b', ':back', 'b', 'back'):
+                continue
             try:
-                selected_index = int(opcion_main_menu) - 1  # Ajustar el índice (restar 1)
-                if 0 <= selected_index < len(menu_options):
-                    clear_screen()                    
-                    selected_option = menu_options[selected_index]
-                    selected_option[1]()  
-                    Prompt.ask("[bold blue]Pulsa Enter para continuar...[/bold blue]")                 
+                if opcion_main_menu.startswith(':'):
+                    opcion_main_menu = opcion_main_menu[1:]
+                num = int(opcion_main_menu)
+                if num in number_map:
+                    idx = number_map[num]
+                    # Mover selección a ese índice
+                    selected_pos = selectable_indices.index(idx)
+                    clear_screen()
+                    menu_items[idx]['action']()
+                    Prompt.ask("[bold blue]Pulsa Enter para continuar...[/bold blue]")
                 else:
                     console.print(f"[bold red]Opción incorrecta...[/bold red]")
                     Prompt.ask("[bold blue]Pulsa Enter para continuar...[/bold blue]")
@@ -8931,5 +9609,1637 @@ def main():
                 console.print(f"[bold red]Entrada no válida. Por favor, introduce un número o comando válido...[/bold red]")
                 Prompt.ask("[bold blue]Pulsa Enter para continuar...[/bold blue]")
 
+# No olvides actualizar la llamada en tu menú principal
+def estrategia_acumulacion_intraday_menu():
+    ticker = Prompt.ask("Ticker", default="TECL")
+    capital_total_str = Prompt.ask("Capital total", default="400000")
+    capital_total = float(capital_total_str) if capital_total_str else 400000.0
+    num_escalones_str = Prompt.ask("Número de escalones (2-4)", default="3")
+    num_escalones = int(num_escalones_str) if num_escalones_str else 3
+    
+    # Llamar a la nueva función
+    estrategia_acumulacion_diaria_estimada(ticker, capital_total, num_escalones)
+
+
+def estrategia_acumulacion_diaria_estimada(ticker: str, capital_total: float = 10000, num_escalones: int = 3, precio_actual_manual: float | None = None):
+    """
+    Estrategia de Acumulación con Niveles Estimados a partir de Datos Diarios.
+    Utiliza Puntos Pivote para calcular los escalones de entrada.
+    """
+    console.print(f"[bold blue]📊 Estrategia de Acumulación con Soportes Estimados para {ticker}[/bold blue]")
+
+    df = _get_daily_data_robust(ticker)
+
+    if df is None or len(df) < 2:
+        console.print("[red]❌ No hay suficientes datos históricos para calcular los niveles.[/red]")
+        return {}
+
+    try:
+        # Datos del día anterior para los cálculos
+        prev_high = float(df['High'].iloc[-2])
+        prev_low = float(df['Low'].iloc[-2])
+        prev_close = float(df['Close'].iloc[-2])
+        
+        # Precio de referencia actual (cierre más reciente)
+        precio_actual = float(df['Close'].iloc[-1])
+
+        # --- CÁLCULO DE PUNTOS PIVOTE ---
+        pivot = (prev_high + prev_low + prev_close) / 3
+        s1 = (2 * pivot) - prev_high
+        s2 = pivot - (prev_high - prev_low)
+        s3 = prev_low - 2 * (prev_high - pivot)
+        
+        console.print("[cyan]Niveles de Soporte (Pivotes) calculados para hoy:[/cyan]")
+        console.print(f"  S1: ${s1:.2f}, S2: ${s2:.2f}, S3: ${s3:.2f}")
+
+        # Usar los pivotes como nuestros niveles de soporte
+        soportes_calculados = sorted([s1, s2, s3], reverse=True)
+        
+        # Filtrar solo los soportes que están por debajo del precio actual
+        soportes = [s for s in soportes_calculados if s < precio_actual]
+
+        if not soportes:
+            console.print("[yellow]El precio actual ya está por debajo de todos los soportes pivote. Generando niveles teóricos.[/yellow]")
+            soportes = [precio_actual * (1 - (i * 0.015)) for i in range(1, num_escalones + 1)]
+
+        # Distribución de capital
+        if num_escalones == 2: porcentajes_escalon = [0.6, 0.4]
+        elif num_escalones == 3: porcentajes_escalon = [0.4, 0.35, 0.25]
+        else: porcentajes_escalon = [0.3, 0.3, 0.25, 0.15]
+        
+        estrategia = {
+            'ticker': ticker, 'precio_actual': precio_actual, 'capital_total': capital_total,
+            'num_escalones': num_escalones, 'escalones': []
+        }
+        
+        for i in range(num_escalones):
+            if i < len(soportes):
+                precio_entrada = soportes[i]
+                condicion = f"Entrada en Soporte Estimado S{i+1}"
+            else: # Fallback si no hay suficientes soportes
+                precio_entrada = soportes[-1] * (1 - 0.01)
+                condicion = "Entrada en nivel de seguridad"
+
+            monto_escalon = capital_total * porcentajes_escalon[i]
+            acciones = int(monto_escalon / precio_entrada)
+            
+            estrategia['escalones'].append({
+                'escalon': i + 1, 'precio_entrada': round(precio_entrada, 2),
+                'monto': round(monto_escalon, 2), 'acciones': acciones,
+                'condicion': condicion,
+                'stop_loss': round(soportes_calculados[-1] * 0.98, 2) # Stop loss 2% por debajo del último soporte (S3)
+            })
+        
+        # Mostrar la tabla de resultados
+        console.print(f"\n[bold green]🎯 Estrategia de Entrada Escalonada (Estimada) para {ticker}[/bold green]")
+        console.print(f"💰 Capital Total: ${capital_total:,.2f}")
+        console.print(f"📈 Precio de Referencia Actual: ${precio_actual:.2f}")
+        
+        table = Table(title="Escalones de Entrada Estimados con Puntos Pivote")
+        table.add_column("Escalón", style="cyan"); table.add_column("Precio Entrada", style="green")
+        table.add_column("Monto", style="yellow"); table.add_column("Acciones", style="blue")
+        table.add_column("Condición", style="magenta"); table.add_column("Stop Loss", style="red")
+        
+        for escalon in estrategia['escalones']:
+            table.add_row(
+                str(escalon['escalon']), f"${escalon['precio_entrada']:.2f}",
+                f"${escalon['monto']:,.2f}", str(escalon['acciones']),
+                escalon['condicion'], f"${escalon['stop_loss']:.2f}"
+            )
+        
+        console.print(table)
+        
+        monto_total_invertido = sum(e['monto'] for e in estrategia['escalones'])
+        if monto_total_invertido > 0:
+            precio_promedio = sum(e['precio_entrada'] * e['monto'] for e in estrategia['escalones']) / monto_total_invertido
+            console.print(f"\n[bold blue]📊 Precio Promedio Ponderado si se ejecutan todos: ${precio_promedio:.2f}[/bold blue]")
+        
+        return estrategia
+        
+    except Exception as e:
+        console.print(f"[red]❌ Error al calcular la estrategia para {ticker}: {e}[/red]")
+        return {}
+
+# No olvides actualizar la llamada en tu menú principal
+def estrategia_acumulacion_intraday_menu():
+    ticker = Prompt.ask("Ticker", default="TECL")
+    capital_total_str = Prompt.ask("Capital total", default="400000")
+    capital_total = float(capital_total_str) if capital_total_str else 400000.0
+    num_escalones_str = Prompt.ask("Número de escalones (2-4)", default="3")
+    num_escalones = int(num_escalones_str) if num_escalones_str else 3
+    
+    # Llamar a la nueva función
+    estrategia_acumulacion_diaria_estimada(ticker, capital_total, num_escalones)
+
+
+def _get_daily_data_robust(ticker: str):
+    """
+    Descarga datos DIARIOS de forma robusta - VERSIÓN FINAL CORREGIDA.
+    Utiliza un 'period' más largo ("6mo") para máxima fiabilidad, replicando
+    la lógica de las funciones que sí obtienen datos.
+    """
+    required_cols = ['Open', 'High', 'Low', 'Close']
+    
+    def process_df(df, source_name, convert_to_mxn=False):
+        if df is None or df.empty: return None
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.droplevel(0)
+        
+        df.index = pd.to_datetime(df.index)
+
+        if all(col in df.columns for col in required_cols):
+            console.print(f"[green]✅ Éxito con datos de {source_name}.[/green]")
+            if convert_to_mxn:
+                console.print(f"[blue]🔄 Convirtiendo precios a MXN...[/blue]")
+                usd_to_mxn_rate = get_usd_to_mxn_rate()
+                for col in required_cols + ['Adj Close']:
+                    if col in df.columns: df[col] *= usd_to_mxn_rate
+            return df
+        return None
+
+    # --- Intento 1: yfinance con Ticker Mexicano (.MX) y período robusto ---
+    mx_ticker = normalize_ticker_to_mx(ticker)
+    if mx_ticker != "__SKIP_ACTINVER__":
+        console.print(f"[dim]Intento 1: Descargando datos diarios para {mx_ticker} (yfinance)...[/dim]")
+        # --- CORRECCIÓN CLAVE: Usar "6mo" para máxima fiabilidad ---
+        df = yf.download(mx_ticker, period="6mo", interval="1d", progress=False)
+        processed_df = process_df(df, mx_ticker)
+        if processed_df is not None:
+            return processed_df
+
+    # --- Intento 2: yfinance con Ticker de USA y período robusto ---
+    usa_ticker = ticker.upper().replace('.MX', '')
+    console.print(f"[yellow]⚠️ Fallo con yfinance MX. Intentando con {usa_ticker} (yfinance USA)...[/yellow]")
+    # --- CORRECCIÓN CLAVE: Usar "6mo" ---
+    df = yf.download(usa_ticker, period="6mo", interval="1d", progress=False)
+    processed_df = process_df(df, f"{usa_ticker}", convert_to_mxn=True)
+    if processed_df is not None:
+        return processed_df
+
+    # --- Intento 3: Fallback a APIs Alternativas (como último recurso) ---
+    console.print(f"[bold red]❌ yfinance falló por completo. Intentando con APIs alternativas...[/bold red]")
+    df_alternative = get_stock_data_alternative_apis(usa_ticker, period="6mo")
+    processed_df = process_df(df_alternative, "APIs Alternativas", convert_to_mxn=True)
+    if processed_df is not None:
+        return processed_df
+
+    console.print(f"[red]❌ No se pudieron descargar datos para {ticker} desde ninguna fuente.[/red]")
+    return None
+
+def estrategia_acumulacion_intraday(ticker: str, capital_total: float = 10000, num_escalones: int = 3):
+    """
+    Estrategia de Acumulación Intradía (Scaling In) - VERSIÓN CORREGIDA FINAL
+    
+    Soluciona el error 'ambiguous truth value' asegurando que las columnas
+    se procesen como Series de datos simples, incluso si yfinance devuelve un formato complejo.
+    """
+    console.print(f"[bold blue]📊 Estrategia de Acumulación Intradía para {ticker}[/bold blue]")
+
+    df = _get_intraday_data_robust(ticker)
+
+    if df is None:
+        return {}
+
+    try:
+        # --- INICIO DE LA CORRECCIÓN CLAVE ---
+        # Aplanamos las columnas aquí, justo después de recibir el DataFrame.
+        # Esto garantiza que el resto de la función trabaje con un formato simple.
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.droplevel(0)
+        
+        close_series = df['Close']
+        lows = df['Low']
+        # --- FIN DE LA CORRECCIÓN CLAVE ---
+
+        precio_actual = float(close_series.iloc[-1])
+        
+        # Lógica para encontrar soportes
+        soportes = []
+        for i in range(1, min(len(df) - 2, 48)):
+            # Ahora la comparación se hace sobre una Serie simple, lo que evita el error.
+            if (lows.iloc[i-1] > lows.iloc[i]) and (lows.iloc[i] < lows.iloc[i+1]):
+                soportes.append(float(lows.iloc[i]))
+        
+        soportes_validos = sorted([s for s in set(soportes) if s < precio_actual], reverse=True)
+        soportes = soportes_validos[:num_escalones]
+        
+        # Si no se encuentran suficientes soportes, se crean niveles basados en porcentajes
+        if len(soportes) < num_escalones:
+            console.print("[yellow]No se encontraron suficientes soportes técnicos. Creando niveles basados en porcentajes.[/yellow]")
+            needed = num_escalones - len(soportes)
+            last_support = soportes[-1] if soportes else precio_actual
+            for i in range(needed):
+                soportes.append(last_support * (1 - (i + 1) * 0.01))
+
+        # Distribución de capital
+        if num_escalones == 2: porcentajes_escalon = [0.6, 0.4]
+        elif num_escalones == 3: porcentajes_escalon = [0.4, 0.35, 0.25]
+        else: porcentajes_escalon = [0.3, 0.3, 0.25, 0.15]
+        
+        estrategia = {
+            'ticker': ticker, 'precio_actual': precio_actual, 'capital_total': capital_total,
+            'num_escalones': num_escalones, 'escalones': []
+        }
+        
+        for i in range(num_escalones):
+            precio_entrada = soportes[i]
+            monto_escalon = capital_total * porcentajes_escalon[i]
+            acciones = int(monto_escalon / precio_entrada)
+            
+            estrategia['escalones'].append({
+                'escalon': i + 1, 'precio_entrada': round(precio_entrada, 2),
+                'monto': round(monto_escalon, 2), 'acciones': acciones,
+                'condicion': f"Entrada en soporte a ${precio_entrada:.2f}",
+                'stop_loss': round(soportes[-1] * 0.98, 2) # Stop loss unificado para simplicidad
+            })
+        
+        # Mostrar la tabla de resultados
+        console.print(f"\n[bold green]🎯 Estrategia de Entrada Escalonada para {ticker}[/bold green]")
+        console.print(f"💰 Capital Total: ${capital_total:,.2f}")
+        console.print(f"📈 Precio Actual: ${precio_actual:.2f}")
+        
+        table = Table(title="Escalones de Entrada")
+        table.add_column("Escalón", style="cyan"); table.add_column("Precio Entrada", style="green")
+        table.add_column("Monto", style="yellow"); table.add_column("Acciones", style="blue")
+        table.add_column("Condición", style="magenta"); table.add_column("Stop Loss", style="red")
+        
+        for escalon in estrategia['escalones']:
+            table.add_row(
+                str(escalon['escalon']), f"${escalon['precio_entrada']:.2f}",
+                f"${escalon['monto']:,.2f}", str(escalon['acciones']),
+                escalon['condicion'], f"${escalon['stop_loss']:.2f}"
+            )
+        
+        console.print(table)
+        
+        monto_total_invertido = sum(e['monto'] for e in estrategia['escalones'])
+        if monto_total_invertido > 0:
+            precio_promedio = sum(e['precio_entrada'] * e['monto'] for e in estrategia['escalones']) / monto_total_invertido
+            console.print(f"\n[bold blue]📊 Precio Promedio Ponderado si se ejecutan todos: ${precio_promedio:.2f}[/bold blue]")
+        
+        return estrategia
+        
+    except Exception as e:
+        console.print(f"[red]❌ Error al calcular la estrategia para {ticker}: {e}[/red]")
+        return {}
+
+
+def caza_soportes_intraday(tickers: list = None):
+    """
+    Técnica de "Caza de Soportes" Intradía - VERSIÓN CORREGIDA
+    
+    Identifica niveles de soporte relevantes y sugiere órdenes de compra.
+    Esta versión maneja correctamente la estructura de datos de yfinance.
+    """
+    if tickers is None:
+        tickers = ['SOXS', 'SPXS', 'SOXL', 'SPXL', 'TQQQ', 'SQQQ']
+    
+    console.print("[bold blue]🎯 Caza de Soportes Intradía[/bold blue]")
+    console.print("[yellow]Identificando niveles de soporte clave para órdenes de compra[/yellow]")
+    
+    resultados = []
+    
+    for ticker in tickers:
+        try:
+            # Descargar datos de los últimos 3 días con intervalos de 1 hora
+            mx_ticker = normalize_ticker_to_mx(ticker)
+            df = yf.download(mx_ticker, period="3d", interval="1h", progress=False)
+            
+            if df.empty:
+                console.print(f"[yellow]⚠️ No hay datos para {ticker}[/yellow]")
+                continue
+
+            # --- INICIO DE LA CORRECCIÓN ---
+            # Si las columnas son un MultiIndex, aplánalas para evitar errores.
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.droplevel(0)
+            # --- FIN DE LA CORRECCIÓN ---
+
+            precio_actual = float(df['Close'].iloc[-1])
+            
+            soportes_detectados = []
+            
+            # Buscar mínimos locales (pivotes) en las últimas 48 horas
+            for i in range(2, min(len(df) - 2, 48)):
+                idx = len(df) - i - 1
+                
+                # Lógica de pivote: un mínimo rodeado por valores más altos
+                es_pivote = (df['Low'].iloc[idx-1] > df['Low'].iloc[idx] and 
+                             df['Low'].iloc[idx] < df['Low'].iloc[idx+1] and
+                             df['Low'].iloc[idx-2] > df['Low'].iloc[idx] and 
+                             df['Low'].iloc[idx] < df['Low'].iloc[idx+2])
+
+                if es_pivote:
+                    soporte = float(df['Low'].iloc[idx])
+                    if soporte < precio_actual:
+                        soportes_detectados.append({
+                            'precio': soporte,
+                            'volumen': float(df['Volume'].iloc[idx]),
+                            'timestamp': df.index[idx],
+                            'distancia_pct': ((precio_actual - soporte) / precio_actual) * 100
+                        })
+            
+            # Ordenar y filtrar soportes
+            soportes_detectados.sort(key=lambda x: x['distancia_pct'])
+            soportes_top = soportes_detectados[:3]
+            
+            # Calcular niveles de Fibonacci
+            high_24h = float(df['High'].tail(24).max())
+            low_24h = float(df['Low'].tail(24).min())
+            rango = high_24h - low_24h
+            
+            fibonacci_levels = {
+                '23.6%': high_24h - (rango * 0.236),
+                '38.2%': high_24h - (rango * 0.382),
+                '50.0%': high_24h - (rango * 0.500),
+                '61.8%': high_24h - (rango * 0.618)
+            }
+            
+            fib_soportes = {k: v for k, v in fibonacci_levels.items() if v < precio_actual}
+            
+            resultados.append({
+                'ticker': ticker, 'precio_actual': precio_actual,
+                'soportes_tecnicos': soportes_top, 'soportes_fibonacci': fib_soportes,
+                'high_24h': high_24h, 'low_24h': low_24h
+            })
+            
+        except Exception as e:
+            console.print(f"[red]❌ Error analizando {ticker}: {e}[/red]")
+            continue
+    
+    # El resto de la función para mostrar los resultados continúa sin cambios...
+    for resultado in resultados:
+        ticker = resultado['ticker']
+        precio_actual = resultado['precio_actual']
+        
+        console.print(f"\n[bold green]🎯 {ticker} - Precio Actual: ${precio_actual:.2f}[/bold green]")
+        
+        if resultado['soportes_tecnicos']:
+            console.print("[cyan]📊 Soportes Técnicos Detectados:[/cyan]")
+            for i, soporte in enumerate(resultado['soportes_tecnicos'], 1):
+                console.print(f"  {i}. ${soporte['precio']:.2f} (-{soporte['distancia_pct']:.1f}%) Vol: {soporte['volumen']:,.0f}")
+        
+        if resultado['soportes_fibonacci']:
+            console.print("[magenta]🌀 Soportes Fibonacci:[/magenta]")
+            for nivel, precio in resultado['soportes_fibonacci'].items():
+                distancia = ((precio_actual - precio) / precio_actual) * 100
+                console.print(f"  {nivel}: ${precio:.2f} (-{distancia:.1f}%)")
+        
+        console.print("[bold yellow]💡 Órdenes de Compra Sugeridas:[/bold yellow]")
+        
+        todos_soportes = []
+        for soporte in resultado['soportes_tecnicos']:
+            todos_soportes.append({'precio': soporte['precio'], 'tipo': 'Técnico', 'distancia_pct': soporte['distancia_pct']})
+        for nivel, precio in resultado['soportes_fibonacci'].items():
+            distancia = ((precio_actual - precio) / precio_actual) * 100
+            todos_soportes.append({'precio': precio, 'tipo': f'Fibonacci {nivel}', 'distancia_pct': distancia})
+        
+        todos_soportes.sort(key=lambda x: x['distancia_pct'])
+        mejores_soportes = todos_soportes[:3]
+        
+        if not mejores_soportes:
+            console.print("  No se encontraron soportes claros por debajo del precio actual.")
+        else:
+            for i, soporte in enumerate(mejores_soportes, 1):
+                console.print(f"  Orden {i}: Comprar en ${soporte['precio']:.2f} ({soporte['tipo']}, -{soporte['distancia_pct']:.1f}%)")
+    
+    return resultados
+
+
+
+def reversion_media_bollinger(tickers: list = None, periodo_bollinger: int = 20, desviacion: float = 2.0):
+    """
+    Estrategia de Trading de Reversión a la Media usando Bandas de Bollinger
+    
+    Algoritmo mejorado que usa Bandas de Bollinger para identificar condiciones
+    de sobreventa/sobrecompra en ETFs apalancados.
+    
+    Args:
+        tickers: Lista de tickers a analizar
+        periodo_bollinger: Período para las Bandas de Bollinger (default: 20)
+        desviacion: Desviación estándar para las bandas (default: 2.0)
+    """
+    if tickers is None:
+        tickers = ['SOXL', 'SOXS', 'SPXL', 'SPXS', 'TQQQ', 'SQQQ', 'TECL', 'TECS']
+    
+    console.print("[bold blue]📈 Estrategia de Reversión a la Media - Bandas de Bollinger[/bold blue]")
+    console.print(f"[yellow]Período: {periodo_bollinger} días, Desviación: {desviacion}σ[/yellow]")
+    
+    resultados = []
+    señales_compra = []
+    señales_venta = []
+    
+    for ticker in tickers:
+        try:
+            # Descargar datos de los últimos 3 meses
+            mx_ticker = normalize_ticker_to_mx(ticker)
+            df = yf.download(mx_ticker, period="3mo", progress=False)
+            
+            if df.empty or len(df) < periodo_bollinger + 5:
+                console.print(f"[yellow]⚠️ Datos insuficientes para {ticker}[/yellow]")
+                continue
+            
+            # Calcular Bandas de Bollinger
+            close = df['Close']
+            bollinger = BollingerBands(close, window=periodo_bollinger, window_dev=desviacion)
+            
+            # Obtener las bandas
+            bb_upper = bollinger.bollinger_hband()
+            bb_middle = bollinger.bollinger_mavg()  # Media móvil (banda media)
+            bb_lower = bollinger.bollinger_lband()
+            
+            # Calcular indicadores adicionales
+            rsi = RSIIndicator(close, window=14).rsi()
+            
+            # Datos actuales
+            precio_actual = float(close.iloc[-1])
+            bb_upper_actual = float(bb_upper.iloc[-1])
+            bb_middle_actual = float(bb_middle.iloc[-1])
+            bb_lower_actual = float(bb_lower.iloc[-1])
+            rsi_actual = float(rsi.iloc[-1])
+            
+            # Calcular posición dentro de las bandas (0 = banda inferior, 1 = banda superior)
+            bb_position = (precio_actual - bb_lower_actual) / (bb_upper_actual - bb_lower_actual)
+            
+            # Calcular volatilidad (ancho de las bandas)
+            bb_width = ((bb_upper_actual - bb_lower_actual) / bb_middle_actual) * 100
+            
+            # Detectar toques de bandas en los últimos días
+            toque_banda_inferior = any(close.tail(3) <= bb_lower.tail(3))
+            toque_banda_superior = any(close.tail(3) >= bb_upper.tail(3))
+            
+            # Calcular variación reciente
+            variacion_1d = ((precio_actual - float(close.iloc[-2])) / float(close.iloc[-2])) * 100
+            variacion_5d = ((precio_actual - float(close.iloc[-6])) / float(close.iloc[-6])) * 100 if len(close) >= 6 else 0
+            
+            # Lógica de señales mejorada
+            señal = "MANTENER"
+            confianza = 0
+            razon = ""
+            
+            # Señales de COMPRA (Reversión desde sobreventa)
+            if (precio_actual <= bb_lower_actual * 1.01 or toque_banda_inferior) and rsi_actual < 35:
+                señal = "COMPRAR"
+                confianza = 85
+                razon = "Precio en banda inferior + RSI sobreventa"
+                señales_compra.append(ticker)
+            elif bb_position < 0.2 and rsi_actual < 40 and variacion_1d < -2:
+                señal = "COMPRAR"
+                confianza = 75
+                razon = "Posición baja en bandas + caída fuerte"
+                señales_compra.append(ticker)
+            elif precio_actual < bb_middle_actual and rsi_actual < 30:
+                señal = "COMPRAR"
+                confianza = 70
+                razon = "Por debajo de media + RSI muy bajo"
+                señales_compra.append(ticker)
+            
+            # Señales de VENTA (Reversión desde sobrecompra)
+            elif (precio_actual >= bb_upper_actual * 0.99 or toque_banda_superior) and rsi_actual > 65:
+                señal = "VENDER"
+                confianza = 85
+                razon = "Precio en banda superior + RSI sobrecompra"
+                señales_venta.append(ticker)
+            elif bb_position > 0.8 and rsi_actual > 60 and variacion_1d > 2:
+                señal = "VENDER"
+                confianza = 75
+                razon = "Posición alta en bandas + subida fuerte"
+                señales_venta.append(ticker)
+            elif precio_actual > bb_middle_actual and rsi_actual > 70:
+                señal = "VENDER"
+                confianza = 70
+                razon = "Por encima de media + RSI muy alto"
+                señales_venta.append(ticker)
+            
+            # Calcular niveles de stop-loss y take-profit
+            if señal == "COMPRAR":
+                stop_loss = min(bb_lower_actual * 0.98, precio_actual * 0.95)
+                take_profit = bb_middle_actual
+            elif señal == "VENDER":
+                stop_loss = max(bb_upper_actual * 1.02, precio_actual * 1.05)
+                take_profit = bb_middle_actual
+            else:
+                stop_loss = precio_actual * 0.95 if bb_position > 0.5 else precio_actual * 1.05
+                take_profit = bb_middle_actual
+            
+            resultado = {
+                'ticker': ticker,
+                'precio_actual': precio_actual,
+                'bb_upper': bb_upper_actual,
+                'bb_middle': bb_middle_actual,
+                'bb_lower': bb_lower_actual,
+                'bb_position': bb_position,
+                'bb_width': bb_width,
+                'rsi': rsi_actual,
+                'variacion_1d': variacion_1d,
+                'variacion_5d': variacion_5d,
+                'señal': señal,
+                'confianza': confianza,
+                'razon': razon,
+                'stop_loss': stop_loss,
+                'take_profit': take_profit,
+                'toque_banda_inferior': toque_banda_inferior,
+                'toque_banda_superior': toque_banda_superior
+            }
+            
+            resultados.append(resultado)
+            
+        except Exception as e:
+            console.print(f"[red]❌ Error analizando {ticker}: {e}[/red]")
+            continue
+    
+    # Mostrar resultados en tabla
+    if resultados:
+        table = Table(title="Análisis de Reversión a la Media - Bandas de Bollinger")
+        table.add_column("Ticker", style="cyan")
+        table.add_column("Precio", style="white")
+        table.add_column("Posición BB", style="yellow")
+        table.add_column("RSI", style="blue")
+        table.add_column("Señal", style="bold")
+        table.add_column("Confianza", style="green")
+        table.add_column("Stop Loss", style="red")
+        table.add_column("Take Profit", style="green")
+        
+        for r in resultados:
+            # Color de la señal
+            if r['señal'] == "COMPRAR":
+                señal_color = "[bold green]COMPRAR[/bold green]"
+            elif r['señal'] == "VENDER":
+                señal_color = "[bold red]VENDER[/bold red]"
+            else:
+                señal_color = "[yellow]MANTENER[/yellow]"
+            
+            table.add_row(
+                r['ticker'],
+                f"${r['precio_actual']:.2f}",
+                f"{r['bb_position']:.2f}",
+                f"{r['rsi']:.1f}",
+                señal_color,
+                f"{r['confianza']}%",
+                f"${r['stop_loss']:.2f}",
+                f"${r['take_profit']:.2f}"
+            )
+        
+        console.print(table)
+        
+        # Resumen de señales
+        console.print(f"\n[bold green]🟢 Señales de COMPRA ({len(señales_compra)}):[/bold green]")
+        for ticker in señales_compra:
+            r = next(res for res in resultados if res['ticker'] == ticker)
+            console.print(f"  • {ticker}: {r['razon']} (Confianza: {r['confianza']}%)")
+        
+        console.print(f"\n[bold red]🔴 Señales de VENTA ({len(señales_venta)}):[/bold red]")
+        for ticker in señales_venta:
+            r = next(res for res in resultados if res['ticker'] == ticker)
+            console.print(f"  • {ticker}: {r['razon']} (Confianza: {r['confianza']}%)")
+        
+        # Guardar resultados
+        df_resultados = pd.DataFrame(resultados)
+        os.makedirs('data', exist_ok=True)
+        csv_file = f'data/reversion_media_bollinger_{datetime.now():%Y%m%d_%H%M%S}.csv'
+        df_resultados.to_csv(csv_file, index=False)
+        console.print(f"\n[blue]💾 Resultados guardados en: {csv_file}[/blue]")
+    
+    return resultados
+
+
+def analisis_cuantitativo_completo(tickers: list = None, capital_total: float = 50000):
+    """
+    Análisis Cuantitativo Completo que combina todas las estrategias:
+    1. Acumulación Intradía (Scaling In)
+    2. Caza de Soportes
+    3. Reversión a la Media con Bandas de Bollinger
+    
+    Args:
+        tickers: Lista de tickers a analizar
+        capital_total: Capital total disponible para distribución
+    """
+    if tickers is None:
+        tickers = ['SOXL', 'SOXS', 'SPXL', 'SPXS', 'TQQQ', 'SQQQ', 'TECL', 'TECS', 'FAS', 'FAZ']
+    
+    console.print("[bold blue]🧮 ANÁLISIS CUANTITATIVO COMPLETO[/bold blue]")
+    console.print(f"[yellow]Capital Total: ${capital_total:,.2f} | Tickers: {len(tickers)}[/yellow]")
+    console.print("=" * 80)
+    
+    # 1. Análisis de Reversión a la Media (Bandas de Bollinger)
+    console.print("\n[bold cyan]1️⃣ ANÁLISIS DE REVERSIÓN A LA MEDIA[/bold cyan]")
+    resultados_bollinger = reversion_media_bollinger(tickers)
+    
+    # Filtrar solo las señales de compra con alta confianza
+    oportunidades_compra = [r for r in resultados_bollinger if r['señal'] == 'COMPRAR' and r['confianza'] >= 70]
+    
+    if not oportunidades_compra:
+        console.print("[yellow]⚠️ No se encontraron oportunidades de compra con alta confianza[/yellow]")
+        return
+    
+    console.print(f"\n[bold green]✅ {len(oportunidades_compra)} oportunidades de compra identificadas[/bold green]")
+    
+    # 2. Análisis de Soportes para las oportunidades
+    console.print("\n[bold cyan]2️⃣ ANÁLISIS DE SOPORTES[/bold cyan]")
+    tickers_oportunidad = [r['ticker'] for r in oportunidades_compra]
+    resultados_soportes = caza_soportes_intraday(tickers_oportunidad)
+    
+    # 3. Estrategias de Acumulación Escalonada
+    console.print("\n[bold cyan]3️⃣ ESTRATEGIAS DE ACUMULACIÓN ESCALONADA[/bold cyan]")
+    
+    # Distribuir capital entre las oportunidades
+    capital_por_ticker = capital_total / len(oportunidades_compra)
+    
+    estrategias_completas = []
+    
+    for oportunidad in oportunidades_compra:
+        ticker = oportunidad['ticker']
+        console.print(f"\n[bold magenta]📊 ANÁLISIS COMPLETO: {ticker}[/bold magenta]")
+        
+        # Crear estrategia de acumulación
+        estrategia_acum = estrategia_acumulacion_intraday(ticker, capital_por_ticker, 3)
+        
+        # Combinar con análisis de soportes
+        soporte_info = next((s for s in resultados_soportes if s['ticker'] == ticker), None)
+        
+        # Crear estrategia completa
+        estrategia_completa = {
+            'ticker': ticker,
+            'señal_bollinger': oportunidad,
+            'soportes': soporte_info,
+            'acumulacion': estrategia_acum,
+            'capital_asignado': capital_por_ticker
+        }
+        
+        # Mostrar recomendación final
+        console.print(f"\n[bold yellow]💡 RECOMENDACIÓN FINAL PARA {ticker}:[/bold yellow]")
+        console.print(f"🎯 Señal: {oportunidad['señal']} (Confianza: {oportunidad['confianza']}%)")
+        console.print(f"💰 Capital Asignado: ${capital_por_ticker:,.2f}")
+        console.print(f"📈 Precio Actual: ${oportunidad['precio_actual']:.2f}")
+        console.print(f"🛡️ Stop Loss: ${oportunidad['stop_loss']:.2f}")
+        console.print(f"🎯 Take Profit: ${oportunidad['take_profit']:.2f}")
+        console.print(f"📊 Razón: {oportunidad['razon']}")
+        
+        if estrategia_acum and 'escalones' in estrategia_acum:
+            console.print(f"🔄 Escalones de Entrada: {len(estrategia_acum['escalones'])}")
+            for escalon in estrategia_acum['escalones']:
+                console.print(f"   • Escalón {escalon['escalon']}: ${escalon['precio_entrada']:.2f} "
+                            f"(${escalon['monto']:,.2f})")
+        
+        estrategias_completas.append(estrategia_completa)
+    
+    # 4. Resumen Final y Reporte
+    console.print("\n[bold blue]📋 RESUMEN EJECUTIVO[/bold blue]")
+    console.print("=" * 60)
+    
+    total_oportunidades = len(estrategias_completas)
+    capital_utilizado = total_oportunidades * capital_por_ticker
+    
+    console.print(f"🎯 Total de Oportunidades: {total_oportunidades}")
+    console.print(f"💰 Capital Total Utilizado: ${capital_utilizado:,.2f}")
+    console.print(f"📊 Capital por Posición: ${capital_por_ticker:,.2f}")
+    
+    # Crear tabla resumen
+    table = Table(title="Resumen de Estrategias Cuantitativas")
+    table.add_column("Ticker", style="cyan")
+    table.add_column("Precio", style="white")
+    table.add_column("Confianza", style="green")
+    table.add_column("Capital", style="yellow")
+    table.add_column("Stop Loss", style="red")
+    table.add_column("Take Profit", style="green")
+    table.add_column("Escalones", style="blue")
+    
+    for estrategia in estrategias_completas:
+        ticker = estrategia['ticker']
+        bollinger = estrategia['señal_bollinger']
+        acum = estrategia['acumulacion']
+        
+        num_escalones = len(acum.get('escalones', [])) if acum else 0
+        
+        table.add_row(
+            ticker,
+            f"${bollinger['precio_actual']:.2f}",
+            f"{bollinger['confianza']}%",
+            f"${capital_por_ticker:,.0f}",
+            f"${bollinger['stop_loss']:.2f}",
+            f"${bollinger['take_profit']:.2f}",
+            str(num_escalones)
+        )
+    
+    console.print(table)
+    
+    # Guardar reporte completo
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    os.makedirs('data', exist_ok=True)
+    
+    # Guardar como JSON para análisis posterior
+    reporte_json = {
+        'timestamp': timestamp,
+        'capital_total': capital_total,
+        'capital_por_ticker': capital_por_ticker,
+        'total_oportunidades': total_oportunidades,
+        'estrategias': estrategias_completas
+    }
+    
+    json_file = f'data/analisis_cuantitativo_completo_{timestamp}.json'
+    with open(json_file, 'w', encoding='utf-8') as f:
+        json.dump(reporte_json, f, indent=2, default=str, ensure_ascii=False)
+    
+    console.print(f"\n[blue]💾 Reporte completo guardado en: {json_file}[/blue]")
+    
+    return estrategias_completas
+
+
+def safe_input(prompt: str, default: str = "") -> str:
+    """
+    Función segura para input() que maneja KeyboardInterrupt elegantemente
+    
+    Args:
+        prompt: Mensaje a mostrar al usuario
+        default: Valor por defecto si se presiona Ctrl+C
+    
+    Returns:
+        str: Entrada del usuario o valor por defecto
+    """
+    try:
+        return input(prompt)
+    except KeyboardInterrupt:
+        console.print(f"\n[yellow]⚠️ Operación cancelada por el usuario[/yellow]")
+        return default
+    except EOFError:
+        console.print(f"\n[yellow]⚠️ Entrada finalizada[/yellow]")
+        return default
+
+
+def exit_program():
+    """Función para salir del programa de manera elegante"""
+    console.print("\n[bold green]👋 ¡Gracias por usar Hacktinver![/bold green]")
+    console.print("[cyan]💡 Recuerda: La inversión inteligente requiere análisis constante[/cyan]")
+    sys.exit(0)
+
+
+# ============================================================================
+# FUNCIONES ROBUSTAS DE DESCARGA DE DATOS CON MÚLTIPLES FUENTES
+# ============================================================================
+
+@retry(stop_max_attempt_number=3, wait_fixed=2000)  # Reintentar 3 veces con 2 segundos de espera
+def fetch_yfinance_data(ticker: str, period: str = "1y", interval: str = "1d"):
+    """Descarga datos de yfinance con reintentos."""
+    try:
+        df = yf.download(ticker, period=period, interval=interval, progress=False)
+        if df.empty:
+            raise ValueError(f"No se encontraron datos para {ticker}")
+        return df
+    except Exception as e:
+        console.print(f"[yellow]⚠️ Error en yfinance para {ticker}: {e}[/yellow]")
+        raise
+
+
+def fetch_alpha_vantage_data(ticker: str, api_key: str):
+    """Descarga datos diarios de Alpha Vantage como respaldo."""
+    try:
+        url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={ticker}&outputsize=full&apikey={api_key}"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if "Time Series (Daily)" not in data:
+            console.print(f"[yellow]⚠️ No se encontraron datos en Alpha Vantage para {ticker}[/yellow]")
+            return None
+        
+        df = pd.DataFrame(data["Time Series (Daily)"]).T
+        df = df.rename(columns={
+            "1. open": "Open",
+            "2. high": "High",
+            "3. low": "Low",
+            "4. close": "Close",
+            "5. volume": "Volume"
+        })
+        df.index = pd.to_datetime(df.index)
+        df = df.astype(float)
+        return df[['Open', 'High', 'Low', 'Close', 'Volume']].sort_index()
+    except Exception as e:
+        console.print(f"[yellow]⚠️ Error en Alpha Vantage para {ticker}: {e}[/yellow]")
+        return None
+
+
+def _get_daily_data_robust(ticker: str):
+    """
+    Descarga datos DIARIOS de forma robusta con múltiples fuentes y reintentos.
+    """
+    required_cols = ['Open', 'High', 'Low', 'Close']
+    
+    def process_df(df, source_name, convert_to_mxn=False):
+        if df is None or df.empty:
+            console.print(f"[yellow]⚠️ DataFrame vacío de {source_name}[/yellow]")
+            return None
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.droplevel(0)
+        
+        df.index = pd.to_datetime(df.index)
+        
+        if not all(col in df.columns for col in required_cols):
+            console.print(f"[yellow]⚠️ Columnas faltantes en datos de {source_name}: {df.columns}[/yellow]")
+            return None
+        
+        console.print(f"[green]✅ Éxito con datos de {source_name}.[/green]")
+        if convert_to_mxn:
+            console.print(f"[blue]🔄 Convirtiendo precios a MXN...[/blue]")
+            usd_to_mxn_rate = get_usd_to_mxn_rate()
+            for col in required_cols:
+                df[col] *= usd_to_mxn_rate
+        return df
+
+    # Intento 1: yfinance con Ticker Mexicano (.MX)
+    mx_ticker = normalize_ticker_to_mx(ticker)
+    if mx_ticker != "__SKIP_ACTINVER__":
+        console.print(f"[dim]Intento 1: Descargando datos diarios para {mx_ticker} (yfinance)...[/dim]")
+        try:
+            df = fetch_yfinance_data(mx_ticker, period="1y", interval="1d")
+            processed_df = process_df(df, mx_ticker)
+            if processed_df is not None and len(processed_df) >= 2:
+                return processed_df
+        except Exception as e:
+            console.print(f"[yellow]⚠️ Fallo con yfinance MX: {e}. Intentando con {ticker} (yfinance USA)...[/yellow]")
+
+    # Intento 2: yfinance con Ticker de USA
+    usa_ticker = ticker.upper().replace('.MX', '')
+    try:
+        df = fetch_yfinance_data(usa_ticker, period="1y", interval="1d")
+        processed_df = process_df(df, usa_ticker, convert_to_mxn=True)
+        if processed_df is not None and len(processed_df) >= 2:
+            return processed_df
+    except Exception as e:
+        console.print(f"[yellow]⚠️ Fallo con yfinance USA: {e}. Intentando con APIs alternativas...[/yellow]")
+
+    # Intento 3: Alpha Vantage como respaldo
+    console.print(f"[dim]Intento 3: Descargando datos para {usa_ticker} (Alpha Vantage)...[/dim]")
+    alpha_vantage_api_key = os.getenv("ALPHA_VANTAGE_API_KEY", "YOUR_API_KEY")  # Reemplaza con tu clave API
+    df_alternative = fetch_alpha_vantage_data(usa_ticker, alpha_vantage_api_key)
+    processed_df = process_df(df_alternative, "Alpha Vantage", convert_to_mxn=True)
+    if processed_df is not None and len(processed_df) >= 2:
+        return processed_df
+
+    console.print(f"[red]❌ No se pudieron descargar datos para {ticker} desde ninguna fuente.[/red]")
+    return None
+
+
+def estrategia_acumulacion_diaria_estimada(ticker: str, capital_total: float = 10000, num_escalones: int = 3, precio_actual_manual: float | None = None):
+    """
+    Estrategia de Acumulación con Niveles Estimados a partir de Datos Diarios.
+    Utiliza Puntos Pivote para calcular los escalones de entrada.
+    """
+    console.print(f"[bold blue]📊 Estrategia de Acumulación con Soportes Estimados para {ticker}[/bold blue]")
+
+    df = _get_daily_data_robust(ticker)
+
+    if df is None or len(df) < 2:
+        console.print("[red]❌ No hay suficientes datos históricos para calcular los niveles.[/red]")
+        # Fallback: Crear niveles teóricos basados en un precio estimado
+        precio_actual = precio_actual_manual if (precio_actual_manual is not None and precio_actual_manual > 0) else 100.0
+        if precio_actual_manual is None:
+            console.print("[yellow]⚠️ Usando precio ficticio ($100) para niveles teóricos.[/yellow]")
+        soportes = [precio_actual * (1 - (i * 0.015)) for i in range(1, num_escalones + 1)]
+        precio_actual_fallback = precio_actual
+    else:
+        # Datos del día anterior para los cálculos
+        prev_high = float(df['High'].iloc[-2])
+        prev_low = float(df['Low'].iloc[-2])
+        prev_close = float(df['Close'].iloc[-2])
+        precio_actual = float(df['Close'].iloc[-1])
+        if precio_actual_manual is not None and precio_actual_manual > 0:
+            precio_actual = float(precio_actual_manual)
+
+        # Cálculo de Puntos Pivote
+        pivot = (prev_high + prev_low + prev_close) / 3
+        s1 = (2 * pivot) - prev_high
+        s2 = pivot - (prev_high - prev_low)
+        s3 = prev_low - 2 * (prev_high - pivot)
+        
+        console.print("[cyan]Niveles de Soporte (Pivotes) calculados para hoy:[/cyan]")
+        console.print(f"  S1: ${s1:.2f}, S2: ${s2:.2f}, S3: ${s3:.2f}")
+
+        soportes_calculados = sorted([s1, s2, s3], reverse=True)
+        soportes = [s for s in soportes_calculados if s < precio_actual]
+
+        if not soportes:
+            console.print("[yellow]El precio actual ya está por debajo de todos los soportes pivote. Generando niveles teóricos.[/yellow]")
+            soportes = [precio_actual * (1 - (i * 0.015)) for i in range(1, num_escalones + 1)]
+        precio_actual_fallback = precio_actual
+
+    # Distribución de capital
+    if num_escalones == 2:
+        porcentajes_escalon = [0.6, 0.4]
+    elif num_escalones == 3:
+        porcentajes_escalon = [0.4, 0.35, 0.25]
+    else:
+        porcentajes_escalon = [0.3, 0.3, 0.25, 0.15]
+
+    estrategia = {
+        'ticker': ticker,
+        'precio_actual': precio_actual_fallback,
+        'capital_total': capital_total,
+        'num_escalones': num_escalones,
+        'escalones': []
+    }
+
+    for i in range(num_escalones):
+        if i < len(soportes):
+            precio_entrada = soportes[i]
+            condicion = f"Entrada en Soporte Estimado S{i+1}"
+        else:
+            precio_entrada = soportes[-1] * (1 - 0.01) if soportes else precio_actual_fallback * (1 - (i + 1) * 0.01)
+            condicion = "Entrada en nivel de seguridad"
+
+        monto_escalon = capital_total * porcentajes_escalon[i]
+        acciones = int(monto_escalon / precio_entrada)
+        
+        estrategia['escalones'].append({
+            'escalon': i + 1,
+            'precio_entrada': round(precio_entrada, 2),
+            'monto': round(monto_escalon, 2),
+            'acciones': acciones,
+            'condicion': condicion,
+            'stop_loss': round(soportes[-1] * 0.98 if soportes else precio_actual_fallback * 0.95, 2)
+        })
+
+    # Mostrar la tabla de resultados
+    console.print(f"\n[bold green]🎯 Estrategia de Entrada Escalonada (Estimada) para {ticker}[/bold green]")
+    console.print(f"💰 Capital Total: ${capital_total:,.2f}")
+    console.print(f"📈 Precio de Referencia Actual: ${precio_actual_fallback:.2f}")
+
+    table = Table(title="Escalones de Entrada Estimados con Puntos Pivote")
+    table.add_column("Escalón", style="cyan")
+    table.add_column("Precio Entrada", style="green")
+    table.add_column("Monto", style="yellow")
+    table.add_column("Acciones", style="blue")
+    table.add_column("Condición", style="magenta")
+    table.add_column("Stop Loss", style="red")
+
+    for escalon in estrategia['escalones']:
+        table.add_row(
+            str(escalon['escalon']),
+            f"${escalon['precio_entrada']:.2f}",
+            f"${escalon['monto']:,.2f}",
+            str(escalon['acciones']),
+            escalon['condicion'],
+            f"${escalon['stop_loss']:.2f}"
+        )
+
+    console.print(table)
+
+    monto_total_invertido = sum(e['monto'] for e in estrategia['escalones'])
+    if monto_total_invertido > 0:
+        precio_promedio = sum(e['precio_entrada'] * e['monto'] for e in estrategia['escalones']) / monto_total_invertido
+        console.print(f"\n[bold blue]📊 Precio Promedio Ponderado si se ejecutan todos: ${precio_promedio:.2f}[/bold blue]")
+
+    return estrategia
+
+
+def estrategia_acumulacion_intraday_menu():
+    """Menú interactivo para la estrategia de acumulación con datos robustos"""
+    ticker = input("Ticker (default='TECL'): ") or "TECL"
+    capital_total_str = input("Capital total (default='400000'): ") or "400000"
+    capital_total = float(capital_total_str)
+    num_escalones_str = input("Número de escalones (2-4) (default='3'): ") or "3"
+    num_escalones = int(num_escalones_str)
+    precio_manual_str = input("Precio actual manual (opcional, Enter para omitir): ") or ""
+    precio_manual = float(precio_manual_str) if precio_manual_str.strip() else None
+    
+    # Llamar a la función
+    estrategia_acumulacion_diaria_estimada(ticker, capital_total, num_escalones, precio_manual)
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        console.print("[bold blue]🚀 Iniciando Hacktinver - Sistema de Análisis Cuantitativo[/bold blue]")
+        console.print("[yellow]💡 Presiona Ctrl+C en cualquier momento para salir elegantemente[/yellow]")
+        main()
+    except KeyboardInterrupt:
+        console.print(f"\n[yellow]⚠️ Programa interrumpido por el usuario[/yellow]")
+        exit_program()
+    except Exception as e:
+        console.print(f"\n[red]❌ Error inesperado: {e}[/red]")
+        console.print("[yellow]💡 El programa se cerrará de manera segura[/yellow]")
+        sys.exit(1)
+
+
+def monitor_señales_tiempo_real(tickers: list = None, intervalo_minutos: int = 15):
+    """
+    Monitor de señales en tiempo real para las estrategias cuantitativas
+    
+    Args:
+        tickers: Lista de tickers a monitorear
+        intervalo_minutos: Intervalo de actualización en minutos
+    """
+    if tickers is None:
+        tickers = ['SOXL', 'SOXS', 'SPXL', 'SPXS', 'TQQQ', 'SQQQ', 'TECL', 'TECS']
+    
+    console.print(f"[bold blue]🔄 Monitor de Señales en Tiempo Real[/bold blue]")
+    console.print(f"[yellow]Monitoreando {len(tickers)} tickers cada {intervalo_minutos} minutos[/yellow]")
+    console.print("[dim]Presiona Ctrl+C para detener[/dim]")
+    
+    señales_anteriores = {}
+    
+    try:
+        while True:
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            console.print(f"\n[bold cyan]🕐 Actualización: {timestamp}[/bold cyan]")
+            
+            # Ejecutar análisis de reversión a la media
+            resultados = reversion_media_bollinger(tickers)
+            
+            # Detectar cambios en señales
+            señales_nuevas = []
+            for resultado in resultados:
+                ticker = resultado['ticker']
+                señal_actual = resultado['señal']
+                confianza = resultado['confianza']
+                
+                # Verificar si hay cambio de señal
+                if ticker in señales_anteriores:
+                    if señales_anteriores[ticker] != señal_actual and señal_actual != 'MANTENER':
+                        señales_nuevas.append({
+                            'ticker': ticker,
+                            'señal_anterior': señales_anteriores[ticker],
+                            'señal_nueva': señal_actual,
+                            'confianza': confianza,
+                            'precio': resultado['precio_actual'],
+                            'razon': resultado['razon']
+                        })
+                
+                señales_anteriores[ticker] = señal_actual
+            
+            # Mostrar alertas de nuevas señales
+            if señales_nuevas:
+                console.print("[bold red]🚨 NUEVAS SEÑALES DETECTADAS:[/bold red]")
+                for señal in señales_nuevas:
+                    color = "green" if señal['señal_nueva'] == 'COMPRAR' else "red"
+                    console.print(f"[{color}]• {señal['ticker']}: {señal['señal_anterior']} → {señal['señal_nueva']} "
+                                f"(${señal['precio']:.2f}, {señal['confianza']}%)[/{color}]")
+                    console.print(f"  Razón: {señal['razon']}")
+                
+                # Enviar notificación por Telegram si está configurado
+                if bot and telegram_chat_ids:
+                    mensaje = f"🚨 NUEVAS SEÑALES DETECTADAS:\n\n"
+                    for señal in señales_nuevas:
+                        emoji = "🟢" if señal['señal_nueva'] == 'COMPRAR' else "🔴"
+                        mensaje += f"{emoji} {señal['ticker']}: {señal['señal_nueva']}\n"
+                        mensaje += f"   Precio: ${señal['precio']:.2f}\n"
+                        mensaje += f"   Confianza: {señal['confianza']}%\n\n"
+                    
+                    for chat_id in telegram_chat_ids:
+                        try:
+                            bot.send_message(chat_id=chat_id, text=mensaje)
+                        except Exception as e:
+                            console.print(f"[yellow]⚠️ Error enviando Telegram: {e}[/yellow]")
+            else:
+                console.print("[dim]Sin cambios en señales[/dim]")
+            
+            # Esperar antes de la siguiente actualización
+            console.print(f"[dim]Próxima actualización en {intervalo_minutos} minutos...[/dim]")
+            time.sleep(intervalo_minutos * 60)
+            
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Monitor detenido por el usuario[/yellow]")
+
+
+def _parse_reto_line(line: str):
+    parts = [p.strip() for p in line.split('|')]
+    if len(parts) < 5:
+        return None
+    try:
+        symbol = parts[1]
+        price_now = float(parts[3])
+        price_prev = float(parts[4])
+    except Exception:
+        return None
+    change_abs = price_now - price_prev
+    change_pct = (change_abs / price_prev * 100.0) if price_prev != 0 else 0.0
+    return {
+        'symbol': symbol,
+        'price_now': price_now,
+        'price_prev': price_prev,
+        'change_abs': change_abs,
+        'change_pct': change_pct,
+    }
+
+
+def monitor_reto_actinver(interval_seconds: int = 3, top_n: int = 15):
+    url = 'https://www.retoactinver.com/archivos/datosReto.txt'
+    console.print("[bold blue]📡 Monitor de Stocks (Reto Actinver) - Tiempo casi real[/bold blue]")
+    console.print("[dim]Presiona Ctrl+C para detener el monitoreo[/dim]")
+    os.makedirs('data', exist_ok=True)
+    history_path = 'data/reto_history.csv'
+    # aseguramos archivo
+    try:
+        with open(history_path, 'a', encoding='utf-8') as _:
+            pass
+    except Exception:
+        pass
+
+    update_count = 0
+    try:
+        while True:
+            update_count += 1
+            now_str = datetime.now().strftime('%H:%M:%S')
+            try:
+                raw = urlopen(url, timeout=10).read().decode('utf-8', errors='ignore')
+                lines = [ln for ln in raw.splitlines() if ln.strip()]
+                records = []
+                for ln in lines:
+                    rec = _parse_reto_line(ln)
+                    if rec is not None:
+                        records.append(rec)
+            except Exception as e:
+                console.print(f"[red]Error obteniendo datos del reto: {e}[/red]")
+                time.sleep(interval_seconds)
+                continue
+
+            if not records:
+                console.print("[yellow]No se recibieron registros válidos.[/yellow]")
+                time.sleep(interval_seconds)
+                continue
+
+            total = len(records)
+            winners = sum(1 for r in records if r['change_pct'] > 0)
+            losers = sum(1 for r in records if r['change_pct'] < 0)
+            flats = total - winners - losers
+
+            top = sorted(records, key=lambda r: r['change_pct'], reverse=True)[:top_n]
+
+            table = Table(title=f"Top {top_n} Stocks - Variaciones del Día ({now_str})")
+            table.add_column("Símbolo", style="cyan")
+            table.add_column("Precio Actual", style="green")
+            table.add_column("Precio Anterior", style="yellow")
+            table.add_column("Variación %", style="magenta")
+            table.add_column("Variación $", style="blue")
+            table.add_column("Estado", style="white")
+            for r in top:
+                estado = "📈 GANANDO" if r['change_pct'] > 0 else ("📉 PERDIENDO" if r['change_pct'] < 0 else "—")
+                table.add_row(
+                    r['symbol'],
+                    f"${r['price_now']:,.2f}",
+                    f"${r['price_prev']:,.2f}",
+                    f"{r['change_pct']:+.2f}%",
+                    f"${r['change_abs']:+.2f}",
+                    estado,
+                )
+
+            console.clear()
+            console.print(f"Monitor de Stocks - Actualización #{update_count} - {now_str}")
+            console.print("Presiona Ctrl+C para detener el monitoreo\n")
+            console.print(table)
+            console.print(
+                f"\nResumen del Mercado ({now_str}):\n"
+                f"Total de acciones monitoreadas: {total}\n"
+                f"Acciones ganando: {winners} ({winners/total*100:.1f}%)\n"
+                f"Acciones perdiendo: {losers} ({losers/total*100:.1f}%)\n"
+                f"Acciones sin cambio: {flats} ({flats/total*100:.1f}%)\n"
+            )
+
+            # persist snapshot
+            try:
+                ts = datetime.now().isoformat()
+                with open(history_path, 'a', encoding='utf-8', newline='') as f:
+                    w = csv.writer(f)
+                    for r in records:
+                        w.writerow([ts, r['symbol'], r['price_now'], r['price_prev'], r['change_abs'], r['change_pct']])
+            except Exception:
+                pass
+
+            # mini barras
+            console.print("\n[bold]Barras (Top 10 por %):[/bold]")
+            for r in top[:10]:
+                bar_len = int(max(min(abs(r['change_pct'])/0.5, 50), 0))
+                bar = ('#' * bar_len)
+                sign = '+' if r['change_pct'] > 0 else '-'
+                console.print(f"{r['symbol']:<8} {sign}{bar}")
+
+            console.print(f"\nPróxima actualización en {interval_seconds} segundos... (Actualización #{update_count})")
+            time.sleep(interval_seconds)
+
+    except KeyboardInterrupt:
+        console.print("[yellow]🛑 Monitoreo detenido por el usuario[/yellow]")
+
+
+def backtest_estrategia_bollinger(ticker: str, capital_inicial: float = 10000, periodo_dias: int = 90):
+    """
+    Backtest de la estrategia de Bandas de Bollinger
+    
+    Args:
+        ticker: Ticker a analizar
+        capital_inicial: Capital inicial para el backtest
+        periodo_dias: Período de días para el backtest
+    """
+    console.print(f"[bold blue]📊 Backtest Estrategia Bollinger - {ticker}[/bold blue]")
+    
+    try:
+        # Descargar datos históricos
+        mx_ticker = normalize_ticker_to_mx(ticker)
+        df = yf.download(mx_ticker, period=f"{periodo_dias}d", progress=False)
+        
+        if df.empty or len(df) < 30:
+            console.print(f"[red]❌ Datos insuficientes para {ticker}[/red]")
+            return
+        
+        # Calcular indicadores
+        close = df['Close']
+        bollinger = BollingerBands(close, window=20, window_dev=2.0)
+        bb_upper = bollinger.bollinger_hband()
+        bb_lower = bollinger.bollinger_lband()
+        bb_middle = bollinger.bollinger_mavg()
+        rsi = RSIIndicator(close, window=14).rsi()
+        
+        # Simular trading
+        posicion = 0  # 0 = sin posición, 1 = largo, -1 = corto
+        capital = capital_inicial
+        acciones = 0
+        trades = []
+        
+        for i in range(20, len(df)):  # Empezar después de que se calculen los indicadores
+            precio = close.iloc[i]
+            bb_up = bb_upper.iloc[i]
+            bb_low = bb_lower.iloc[i]
+            bb_mid = bb_middle.iloc[i]
+            rsi_val = rsi.iloc[i]
+            fecha = df.index[i]
+            
+            # Calcular posición en bandas
+            bb_position = (precio - bb_low) / (bb_up - bb_low) if bb_up != bb_low else 0.5
+            
+            # Señales de compra (reversión desde sobreventa)
+            if posicion == 0 and precio <= bb_low * 1.02 and rsi_val < 35:
+                # Comprar
+                acciones = int(capital * 0.95 / precio)  # Usar 95% del capital
+                if acciones > 0:
+                    costo_total = acciones * precio
+                    capital -= costo_total
+                    posicion = 1
+                    trades.append({
+                        'fecha': fecha,
+                        'tipo': 'COMPRA',
+                        'precio': precio,
+                        'acciones': acciones,
+                        'capital_restante': capital,
+                        'valor_posicion': acciones * precio
+                    })
+            
+            # Señales de venta (reversión desde sobrecompra o stop loss)
+            elif posicion == 1:
+                # Condiciones de venta
+                vender = False
+                razon = ""
+                
+                if precio >= bb_up * 0.98 and rsi_val > 65:
+                    vender = True
+                    razon = "Banda superior + RSI alto"
+                elif precio >= bb_mid and bb_position > 0.6:
+                    vender = True
+                    razon = "Objetivo banda media alcanzado"
+                elif precio <= trades[-1]['precio'] * 0.95:  # Stop loss 5%
+                    vender = True
+                    razon = "Stop loss activado"
+                
+                if vender:
+                    # Vender
+                    ingresos = acciones * precio
+                    capital += ingresos
+                    
+                    # Calcular P&L del trade
+                    precio_compra = trades[-1]['precio']
+                    pnl = (precio - precio_compra) / precio_compra * 100
+                    
+                    trades.append({
+                        'fecha': fecha,
+                        'tipo': 'VENTA',
+                        'precio': precio,
+                        'acciones': acciones,
+                        'capital_total': capital,
+                        'pnl_pct': pnl,
+                        'razon': razon
+                    })
+                    
+                    acciones = 0
+                    posicion = 0
+        
+        # Si quedamos con posición abierta, cerrarla al final
+        if posicion == 1:
+            precio_final = close.iloc[-1]
+            ingresos = acciones * precio_final
+            capital += ingresos
+            
+            precio_compra = trades[-1]['precio']
+            pnl = (precio_final - precio_compra) / precio_compra * 100
+            
+            trades.append({
+                'fecha': df.index[-1],
+                'tipo': 'VENTA_FINAL',
+                'precio': precio_final,
+                'acciones': acciones,
+                'capital_total': capital,
+                'pnl_pct': pnl,
+                'razon': "Cierre final"
+            })
+        
+        # Calcular estadísticas
+        capital_final = capital
+        rendimiento_total = ((capital_final - capital_inicial) / capital_inicial) * 100
+        
+        # Analizar trades
+        trades_compra = [t for t in trades if t['tipo'] == 'COMPRA']
+        trades_venta = [t for t in trades if t['tipo'] in ['VENTA', 'VENTA_FINAL']]
+        
+        trades_ganadores = [t for t in trades_venta if t.get('pnl_pct', 0) > 0]
+        trades_perdedores = [t for t in trades_venta if t.get('pnl_pct', 0) <= 0]
+        
+        # Mostrar resultados
+        console.print(f"\n[bold green]📈 RESULTADOS DEL BACKTEST[/bold green]")
+        console.print(f"Período: {periodo_dias} días")
+        console.print(f"Capital Inicial: ${capital_inicial:,.2f}")
+        console.print(f"Capital Final: ${capital_final:,.2f}")
+        console.print(f"Rendimiento Total: {rendimiento_total:.2f}%")
+        console.print(f"Total de Trades: {len(trades_compra)}")
+        console.print(f"Trades Ganadores: {len(trades_ganadores)} ({len(trades_ganadores)/len(trades_venta)*100:.1f}%)")
+        console.print(f"Trades Perdedores: {len(trades_perdedores)} ({len(trades_perdedores)/len(trades_venta)*100:.1f}%)")
+        
+        if trades_ganadores:
+            pnl_promedio_ganador = sum(t['pnl_pct'] for t in trades_ganadores) / len(trades_ganadores)
+            console.print(f"P&L Promedio Ganador: {pnl_promedio_ganador:.2f}%")
+        
+        if trades_perdedores:
+            pnl_promedio_perdedor = sum(t['pnl_pct'] for t in trades_perdedores) / len(trades_perdedores)
+            console.print(f"P&L Promedio Perdedor: {pnl_promedio_perdedor:.2f}%")
+        
+        # Mostrar últimos trades
+        console.print(f"\n[bold cyan]📋 ÚLTIMOS 5 TRADES:[/bold cyan]")
+        for trade in trades[-10:]:
+            if trade['tipo'] in ['VENTA', 'VENTA_FINAL']:
+                color = "green" if trade.get('pnl_pct', 0) > 0 else "red"
+                console.print(f"[{color}]{trade['fecha'].strftime('%Y-%m-%d')}: "
+                            f"{trade['tipo']} ${trade['precio']:.2f} "
+                            f"({trade.get('pnl_pct', 0):.2f}%) - {trade.get('razon', '')}[/{color}]")
+        
+        # Guardar resultados
+        df_trades = pd.DataFrame(trades)
+        os.makedirs('data', exist_ok=True)
+        csv_file = f'data/backtest_bollinger_{ticker}_{datetime.now():%Y%m%d_%H%M%S}.csv'
+        df_trades.to_csv(csv_file, index=False)
+        console.print(f"\n[blue]💾 Trades guardados en: {csv_file}[/blue]")
+        
+        return {
+            'capital_inicial': capital_inicial,
+            'capital_final': capital_final,
+            'rendimiento_pct': rendimiento_total,
+            'total_trades': len(trades_compra),
+            'trades_ganadores': len(trades_ganadores),
+            'trades_perdedores': len(trades_perdedores),
+            'trades': trades
+        }
+        
+    except Exception as e:
+        console.print(f"[red]❌ Error en backtest: {e}[/red]")
+        return None
+
+
+def optimizar_parametros_bollinger(ticker: str, capital_inicial: float = 10000):
+    """
+    Optimización de parámetros para las Bandas de Bollinger
+    Prueba diferentes combinaciones de período y desviación estándar
+    
+    Args:
+        ticker: Ticker a optimizar
+        capital_inicial: Capital inicial para las pruebas
+    """
+    console.print(f"[bold blue]🔧 Optimización de Parámetros Bollinger - {ticker}[/bold blue]")
+    
+    # Parámetros a probar
+    periodos = [15, 20, 25, 30]
+    desviaciones = [1.5, 2.0, 2.5, 3.0]
+    
+    mejores_resultados = []
+    
+    try:
+        # Descargar datos
+        mx_ticker = normalize_ticker_to_mx(ticker)
+        df = yf.download(mx_ticker, period="6mo", progress=False)
+        
+        if df.empty or len(df) < 60:
+            console.print(f"[red]❌ Datos insuficientes para {ticker}[/red]")
+            return
+        
+        console.print(f"[cyan]Probando {len(periodos) * len(desviaciones)} combinaciones...[/cyan]")
+        
+        for periodo in periodos:
+            for desviacion in desviaciones:
+                try:
+                    # Calcular indicadores con parámetros específicos
+                    close = df['Close']
+                    bollinger = BollingerBands(close, window=periodo, window_dev=desviacion)
+                    bb_upper = bollinger.bollinger_hband()
+                    bb_lower = bollinger.bollinger_lband()
+                    bb_middle = bollinger.bollinger_mavg()
+                    rsi = RSIIndicator(close, window=14).rsi()
+                    
+                    # Simular trading simplificado
+                    posicion = 0
+                    capital = capital_inicial
+                    acciones = 0
+                    trades_exitosos = 0
+                    total_trades = 0
+                    
+                    for i in range(periodo + 5, len(df)):
+                        precio = close.iloc[i]
+                        bb_up = bb_upper.iloc[i]
+                        bb_low = bb_lower.iloc[i]
+                        bb_mid = bb_middle.iloc[i]
+                        rsi_val = rsi.iloc[i]
+                        
+                        # Señal de compra
+                        if posicion == 0 and precio <= bb_low * 1.02 and rsi_val < 35:
+                            acciones = int(capital * 0.95 / precio)
+                            if acciones > 0:
+                                capital -= acciones * precio
+                                posicion = 1
+                                precio_compra = precio
+                                total_trades += 1
+                        
+                        # Señal de venta
+                        elif posicion == 1:
+                            if (precio >= bb_up * 0.98 and rsi_val > 65) or precio >= bb_mid:
+                                capital += acciones * precio
+                                if precio > precio_compra:
+                                    trades_exitosos += 1
+                                acciones = 0
+                                posicion = 0
+                    
+                    # Cerrar posición final si existe
+                    if posicion == 1:
+                        capital += acciones * close.iloc[-1]
+                        if close.iloc[-1] > precio_compra:
+                            trades_exitosos += 1
+                    
+                    # Calcular métricas
+                    rendimiento = ((capital - capital_inicial) / capital_inicial) * 100
+                    tasa_exito = (trades_exitosos / total_trades * 100) if total_trades > 0 else 0
+                    
+                    mejores_resultados.append({
+                        'periodo': periodo,
+                        'desviacion': desviacion,
+                        'rendimiento_pct': rendimiento,
+                        'total_trades': total_trades,
+                        'tasa_exito_pct': tasa_exito,
+                        'capital_final': capital,
+                        'score': rendimiento * (tasa_exito / 100) if tasa_exito > 0 else rendimiento
+                    })
+                    
+                except Exception as e:
+                    console.print(f"[yellow]⚠️ Error con parámetros {periodo}/{desviacion}: {e}[/yellow]")
+                    continue
+        
+        # Ordenar por score (rendimiento ponderado por tasa de éxito)
+        mejores_resultados.sort(key=lambda x: x['score'], reverse=True)
+        
+        # Mostrar mejores resultados
+        console.print(f"\n[bold green]🏆 TOP 5 MEJORES COMBINACIONES:[/bold green]")
+        
+        table = Table(title=f"Optimización de Parámetros - {ticker}")
+        table.add_column("Ranking", style="cyan")
+        table.add_column("Período", style="blue")
+        table.add_column("Desviación", style="blue")
+        table.add_column("Rendimiento", style="green")
+        table.add_column("Trades", style="yellow")
+        table.add_column("Tasa Éxito", style="magenta")
+        table.add_column("Score", style="bold green")
+        
+        for i, resultado in enumerate(mejores_resultados[:5], 1):
+            table.add_row(
+                str(i),
+                str(resultado['periodo']),
+                f"{resultado['desviacion']:.1f}",
+                f"{resultado['rendimiento_pct']:.2f}%",
+                str(resultado['total_trades']),
+                f"{resultado['tasa_exito_pct']:.1f}%",
+                f"{resultado['score']:.2f}"
+            )
+        
+        console.print(table)
+        
+        # Recomendación
+        mejor = mejores_resultados[0]
+        console.print(f"\n[bold yellow]💡 RECOMENDACIÓN ÓPTIMA:[/bold yellow]")
+        console.print(f"Período: {mejor['periodo']} días")
+        console.print(f"Desviación: {mejor['desviacion']} σ")
+        console.print(f"Rendimiento Esperado: {mejor['rendimiento_pct']:.2f}%")
+        console.print(f"Tasa de Éxito: {mejor['tasa_exito_pct']:.1f}%")
+        
+        # Guardar resultados
+        df_resultados = pd.DataFrame(mejores_resultados)
+        os.makedirs('data', exist_ok=True)
+        csv_file = f'data/optimizacion_bollinger_{ticker}_{datetime.now():%Y%m%d_%H%M%S}.csv'
+        df_resultados.to_csv(csv_file, index=False)
+        console.print(f"\n[blue]💾 Resultados guardados en: {csv_file}[/blue]")
+        
+        return mejores_resultados
+        
+    except Exception as e:
+        console.print(f"[red]❌ Error en optimización: {e}[/red]")
+        return []
+
+
+def generar_reporte_semanal_cuantitativo():
+    """
+    Genera un reporte semanal completo de todas las estrategias cuantitativas
+    """
+    console.print("[bold blue]📊 REPORTE SEMANAL CUANTITATIVO[/bold blue]")
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # ETFs principales para análisis
+    etfs_principales = ['SOXL', 'SOXS', 'SPXL', 'SPXS', 'TQQQ', 'SQQQ', 'TECL', 'TECS', 'FAS', 'FAZ']
+    
+    reporte = {
+        'fecha_generacion': datetime.now().isoformat(),
+        'periodo_analisis': '1 semana',
+        'etfs_analizados': etfs_principales,
+        'analisis': {}
+    }
+    
+    try:
+        # 1. Análisis de Reversión a la Media
+        console.print("\n[cyan]1️⃣ Análisis de Reversión a la Media...[/cyan]")
+        resultados_bollinger = reversion_media_bollinger(etfs_principales)
+        reporte['analisis']['reversion_media'] = resultados_bollinger
+        
+        # 2. Caza de Soportes
+        console.print("\n[cyan]2️⃣ Análisis de Soportes...[/cyan]")
+        resultados_soportes = caza_soportes_intraday(etfs_principales)
+        reporte['analisis']['soportes'] = resultados_soportes
+        
+        # 3. Resumen de oportunidades
+        oportunidades_compra = [r for r in resultados_bollinger if r['señal'] == 'COMPRAR']
+        oportunidades_venta = [r for r in resultados_bollinger if r['señal'] == 'VENDER']
+        
+        console.print(f"\n[bold green]📈 RESUMEN SEMANAL:[/bold green]")
+        console.print(f"ETFs analizados: {len(etfs_principales)}")
+        console.print(f"Oportunidades de COMPRA: {len(oportunidades_compra)}")
+        console.print(f"Oportunidades de VENTA: {len(oportunidades_venta)}")
+        
+        # 4. Top oportunidades
+        if oportunidades_compra:
+            console.print(f"\n[bold green]🟢 TOP OPORTUNIDADES DE COMPRA:[/bold green]")
+            top_compras = sorted(oportunidades_compra, key=lambda x: x['confianza'], reverse=True)[:3]
+            for i, opp in enumerate(top_compras, 1):
+                console.print(f"{i}. {opp['ticker']}: ${opp['precio_actual']:.2f} "
+                            f"(Confianza: {opp['confianza']}%)")
+                console.print(f"   {opp['razon']}")
+        
+        if oportunidades_venta:
+            console.print(f"\n[bold red]🔴 TOP OPORTUNIDADES DE VENTA:[/bold red]")
+            top_ventas = sorted(oportunidades_venta, key=lambda x: x['confianza'], reverse=True)[:3]
+            for i, opp in enumerate(top_ventas, 1):
+                console.print(f"{i}. {opp['ticker']}: ${opp['precio_actual']:.2f} "
+                            f"(Confianza: {opp['confianza']}%)")
+                console.print(f"   {opp['razon']}")
+        
+        # 5. Guardar reporte completo
+        os.makedirs('data', exist_ok=True)
+        
+        # JSON para análisis programático
+        json_file = f'data/reporte_semanal_cuantitativo_{timestamp}.json'
+        with open(json_file, 'w', encoding='utf-8') as f:
+            json.dump(reporte, f, indent=2, default=str, ensure_ascii=False)
+        
+        # CSV para análisis en Excel
+        if resultados_bollinger:
+            df_bollinger = pd.DataFrame(resultados_bollinger)
+            csv_file = f'data/reporte_semanal_bollinger_{timestamp}.csv'
+            df_bollinger.to_csv(csv_file, index=False)
+            console.print(f"[blue]💾 Reporte Bollinger guardado en: {csv_file}[/blue]")
+        
+        console.print(f"[blue]💾 Reporte completo guardado en: {json_file}[/blue]")
+        
+        # 6. Enviar por Telegram si está configurado
+        if bot and telegram_chat_ids:
+            mensaje = f"📊 REPORTE SEMANAL CUANTITATIVO\n\n"
+            mensaje += f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
+            mensaje += f"📈 ETFs Analizados: {len(etfs_principales)}\n"
+            mensaje += f"🟢 Oportunidades Compra: {len(oportunidades_compra)}\n"
+            mensaje += f"🔴 Oportunidades Venta: {len(oportunidades_venta)}\n\n"
+            
+            if oportunidades_compra:
+                mensaje += "🟢 TOP COMPRAS:\n"
+                for opp in top_compras:
+                    mensaje += f"• {opp['ticker']}: ${opp['precio_actual']:.2f} ({opp['confianza']}%)\n"
+            
+            if oportunidades_venta:
+                mensaje += "\n🔴 TOP VENTAS:\n"
+                for opp in top_ventas:
+                    mensaje += f"• {opp['ticker']}: ${opp['precio_actual']:.2f} ({opp['confianza']}%)\n"
+            
+            for chat_id in telegram_chat_ids:
+                try:
+                    bot.send_message(chat_id=chat_id, text=mensaje)
+                    console.print(f"[green]✅ Reporte enviado por Telegram[/green]")
+                except Exception as e:
+                    console.print(f"[yellow]⚠️ Error enviando Telegram: {e}[/yellow]")
+        
+        return reporte
+        
+    except Exception as e:
+        console.print(f"[red]❌ Error generando reporte: {e}[/red]")
+        return None

@@ -6,6 +6,7 @@ venv/*
 evidences/*
 
 *.csv
+*.html
 
 *.png
 
