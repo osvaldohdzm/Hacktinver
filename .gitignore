@@ -1,0 +1,11 @@
+# Ignore virtual environment
+venv/
+
+# Ignore CSV data files
+data/*.csv
+
+# Ignore plots folder
+plots/
+
+# Ignore requirements if you want to regenerate manually
+requirements.txt
