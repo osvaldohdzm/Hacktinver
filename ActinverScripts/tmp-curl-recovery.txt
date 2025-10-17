@@ -1,0 +1,18 @@
+curl "https://www.retoactinver.com/reto/app/usuarios/session/recoveryTokenSession?user=osvaldo.hdz.m@outlook.com&tokenApp=$(jq -r ".tokenApp" SessionInfo.json)" \
+  -X 'POST' \
+  -H 'authority: www.retoactinver.com' \
+  -H 'accept: application/json, text/plain, */*' \
+  -H 'accept-language: es-419,es;q=0.9' \
+  -H 'content-length: 0' \
+  -H "cookie: tokenapp=$(jq -r ".tokenApp" SessionInfo.json); TS016e21d6=$(jq -r ".TS016e21d6" SessionInfo.json); tokensesion=$(jq -r ".tokenSession" SessionInfo.json)" \
+  -H 'origin: https://www.retoactinver.com' \
+  -H 'referer: https://www.retoactinver.com/RetoActinver/' \
+  -H 'sec-ch-ua: "Not;A=Brand";v="99", "Chromium";v="106"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  -H 'sec-fetch-dest: empty' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-site: same-origin' \
+  -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.5249.62 Safari/537.36' \
+  --compressed \
+  --insecure

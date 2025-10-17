@@ -7,6 +7,7 @@ SyntaxError: Failed to execute 'evaluate' on 'Document': The string './/header/'
 $$("header[id=]")
 """
 
+<<<<<<< HEAD
 # =================================================================================
 # CONFIGURACIÓN GLOBAL DEL SISTEMA
 # =================================================================================
@@ -52,6 +53,8 @@ def update_system_config(max_per_ticker=None, capital_high=None, capital_low=Non
 
 # =================================================================================
 
+=======
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
 # Standard Library Imports
 import warnings
 import logging
@@ -2961,8 +2964,12 @@ def swing_trading_strategy_machine():
         while True:
             if opcion == "y" or opcion == "Y":
                 tickers = df["Símbolo3"].astype(str).values.tolist()
+<<<<<<< HEAD
                 optimal_capital = calculate_optimal_capital(tickers)
                 df_allocations = markovitz_portfolio_optimization(tickers, optimal_capital)
+=======
+                df_allocations = markovitz_portfolio_optimization(tickers, 1000000)
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
                 df_result = pd.merge(
                     df_allocations, df, left_on="Ticker", right_on="Símbolo3"
                 )
@@ -3105,6 +3112,7 @@ def max_sharpe_ratio(mean_returns, cov_matrix, risk_free_rate):
     return result
 
 
+<<<<<<< HEAD
 def apply_max_allocation_limit(allocation_data, max_per_ticker=None):
     """
     Aplica el límite máximo configurado por ticker a cualquier asignación de capital
@@ -3160,6 +3168,8 @@ def calculate_optimal_capital(tickers, base_capital_high=None, base_capital_low=
     
     return capital
 
+=======
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
 def portfolio_volatility(weights, mean_returns, cov_matrix):
     return portfolio_annualised_performance(weights, mean_returns, cov_matrix)[0]
 
@@ -3459,6 +3469,7 @@ def portfolio_optimization_sharpe_short_term(tickers, total_mount, initial_date,
     allocation_dataframe["Allocation $"] = (
         allocation_dataframe["Allocation %"] * float(total_mount) / 100
     ).round(2)
+<<<<<<< HEAD
     
     # Aplicar límite de $400,000 por ticker
     max_allocation_per_ticker = MAX_ALLOCATION_PER_TICKER
@@ -3472,6 +3483,8 @@ def portfolio_optimization_sharpe_short_term(tickers, total_mount, initial_date,
         allocation_dataframe["Allocation %"] = (
             (allocation_dataframe["Allocation $"] / total_allocated) * 100
         ).round(2)
+=======
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
 
     # Añadir los precios de cierre recientes
     allocation_dataframe["LastPrice $"] = (
@@ -3543,6 +3556,7 @@ def markovitz_portfolio_optimization(tickers, total_mount, initial_date, max_per
             lambda x: max_percentaje if x > max_percentaje else x
         )
     ).round(2)
+<<<<<<< HEAD
     
     # Calcular asignación en $ con límite configurado por ticker
     max_allocation_per_ticker = MAX_ALLOCATION_PER_TICKER
@@ -3561,6 +3575,11 @@ def markovitz_portfolio_optimization(tickers, total_mount, initial_date, max_per
         allocation_dataframe["Allocation %"] = (
             (allocation_dataframe["Allocation $"] / total_allocated) * 100
         ).round(2)
+=======
+    allocation_dataframe["Allocation $"] = (
+        allocation_dataframe["Allocation %"] * float(total_mount) / 100
+    ).round(2)
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
     allocation_dataframe["LastPrice $"] = (
         allocation_dataframe["Ticker"].map(last_prices)
     ).round(2)
@@ -4217,8 +4236,12 @@ def day_trading_alerts(market_closing_hour):
                 current_hour = datetime.now().hour
                 current_time = datetime.now().strftime("%H:%M")
 
+<<<<<<< HEAD
                 # Calcular capital óptimo para un solo ticker
                 mount = calculate_optimal_capital([x])
+=======
+                mount = 1000000
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
                 operation_mount = mount * 0.03
                 operation_mount_limit = mount * 0.06
                 print("Analizando {}".format(x))
@@ -4950,8 +4973,12 @@ def swing_trading_recommendations():
         print(len(tickers))
         if len(tickers) >= 1:
             # tb.send_message(chat_id, "Ejecutando algoritmo de optimización de portafolio...")
+<<<<<<< HEAD
             optimal_capital = calculate_optimal_capital(tickers)
             df_allocations = markovitz_portfolio_optimization(tickers, optimal_capital)
+=======
+            df_allocations = markovitz_portfolio_optimization(tickers, 1000000)
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
             df_result = pd.merge(
                 df_allocations, df, left_on="Ticker", right_on="Símbolo"
             )
@@ -5164,7 +5191,11 @@ def filtrar_acciones_por_sector(data, sector):
 
 
 def analizar_acciones(
+<<<<<<< HEAD
     data, market_cap_limit=800000000, beta_min=0.8, average_volume_min=3500
+=======
+    data, market_cap_limit=1000000000, beta_min=0.8, average_volume_min=3500
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
 ):
 
     # Manejo de valores nulos
@@ -5813,15 +5844,23 @@ def pairs_trading_etf_leveraged():
         else:
             pairs_to_analyze = default_pairs
             
+<<<<<<< HEAD
         # Calcular monto óptimo basado en número de pares
         optimal_capital = calculate_optimal_capital(pairs_to_analyze)
         monto_por_pata = float(input(f"Monto por cada lado de la operación (default: {optimal_capital}): ") or str(optimal_capital))
+=======
+        monto_por_pata = float(input("Monto por cada lado de la operación (default: 400000): ") or "400000")
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
         lookback_window = int(input("Ventana de análisis en días (default: 30): ") or "30")
         
     except ValueError:
         console.print("[yellow]⚠️ Usando valores por defecto[/yellow]")
         pairs_to_analyze = default_pairs
+<<<<<<< HEAD
         monto_por_pata = calculate_optimal_capital(pairs_to_analyze)
+=======
+        monto_por_pata = 400000
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
         lookback_window = 30
     
     console.print(f"\n[bold cyan]Configuración del análisis:[/bold cyan]")
@@ -6028,6 +6067,7 @@ def pairs_trading_etf_leveraged():
                 reg = LinearRegression().fit(ratio_lagged.values.reshape(-1, 1), ratio_diff.values)
                 beta = float(reg.coef_[0])
                 # Cálculo robusto de half-life: usar log1p y proteger casos límite (beta<=-1 o denom>=0)
+<<<<<<< HEAD
                 # Validar que beta sea finito y mayor que -1 para evitar log1p de valores <= -1
                 if not np.isfinite(beta) or beta <= -1.0:
                     half_life = float('inf')
@@ -6037,6 +6077,13 @@ def pairs_trading_etf_leveraged():
                         half_life = float('inf')
                     else:
                         half_life = -np.log(2.0) / denom
+=======
+                denom = float(np.log1p(beta)) if np.isfinite(beta) else np.nan
+                if not np.isfinite(denom) or denom >= 0:
+                    half_life = float('inf')
+                else:
+                    half_life = -np.log(2.0) / denom
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
             except Exception as e:
                 console.print(f"[yellow]⚠️ No se pudo estimar half-life para {etf1}/{etf2}: {e}. Se omite.[/yellow]")
                 continue
@@ -6145,6 +6192,7 @@ def pairs_trading_etf_leveraged():
     csv_file_path = f'data/pairs_trading_concurso_{timestamp}.csv'
     df_results.to_csv(csv_file_path, index=False)
     console.print(f"\n[bold yellow]📁 Análisis completo guardado en: {csv_file_path}[/bold yellow]")
+<<<<<<< HEAD
     
     # Mostrar resultados en formato separado por comas para copy-paste
     if not oportunidades.empty:
@@ -6183,6 +6231,8 @@ def pairs_trading_etf_leveraged():
         console.print(f"[bold white]{pairs_string}[/bold white]")
     else:
         console.print(f"\n[bold yellow]No hay pares recomendados para mostrar en formato copy-paste.[/bold yellow]")
+=======
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
 
 def volatility_based_capital_allocation():
     """
@@ -6207,6 +6257,7 @@ def volatility_based_capital_allocation():
     
     # Parámetros de gestión de riesgo
     try:
+<<<<<<< HEAD
         optimal_capital = calculate_optimal_capital(tickers)
         capital_total = float(input(f"Ingresa el capital total disponible (default: {optimal_capital}): ") or str(optimal_capital))
         riesgo_por_operacion = float(input("Ingresa el % de riesgo por operación (default: 2.0): ") or "2.0") / 100
@@ -6214,6 +6265,14 @@ def volatility_based_capital_allocation():
         capital_total = calculate_optimal_capital(tickers)
         riesgo_por_operacion = 0.02
         console.print(f"[yellow]⚠️ Usando valores por defecto: Capital={capital_total:,.0f}, Riesgo=2%[/yellow]")
+=======
+        capital_total = float(input("Ingresa el capital total disponible (default: 1000000): ") or "1000000")
+        riesgo_por_operacion = float(input("Ingresa el % de riesgo por operación (default: 2.0): ") or "2.0") / 100
+    except ValueError:
+        capital_total = 1000000
+        riesgo_por_operacion = 0.02
+        console.print("[yellow]⚠️ Usando valores por defecto: Capital=1,000,000, Riesgo=2%[/yellow]")
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
     
     console.print(f"\n[bold cyan]Analizando {len(tickers)} ETFs para asignación de capital...[/bold cyan]")
     console.print(f"Capital Total: ${capital_total:,.2f}")
@@ -6266,19 +6325,26 @@ def volatility_based_capital_allocation():
             
             # Calcular tamaño de posición basado en riesgo
             # Fórmula: (Capital * % Riesgo) / ATR = Cantidad de acciones
+<<<<<<< HEAD
             # PERO limitado a máximo configurado por ticker
             max_inversion_por_ticker = MAX_ALLOCATION_PER_TICKER
             inversion_objetivo = min(capital_total * riesgo_por_operacion, max_inversion_por_ticker)
             cantidad_acciones = int(inversion_objetivo / atr_actual)
+=======
+            cantidad_acciones = int((capital_total * riesgo_por_operacion) / atr_actual)
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
             
             # Calcular inversión total para esta posición
             inversion_total = cantidad_acciones * precio_actual
             
+<<<<<<< HEAD
             # Asegurar que no exceda el límite de $400,000
             if inversion_total > max_inversion_por_ticker:
                 cantidad_acciones = int(max_inversion_por_ticker / precio_actual)
                 inversion_total = cantidad_acciones * precio_actual
             
+=======
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
             # Calcular porcentaje del portafolio
             porcentaje_portafolio = (inversion_total / capital_total) * 100
             
@@ -6322,6 +6388,7 @@ def volatility_based_capital_allocation():
     
     # Crear DataFrame y ordenar por volatilidad ATR
     df_results = pd.DataFrame(results)
+<<<<<<< HEAD
     
     # Aplicar límite configurado por ticker
     df_results = apply_max_allocation_limit(df_results)
@@ -6331,6 +6398,8 @@ def volatility_based_capital_allocation():
     if total_inversion_after_limit > 0:
         df_results['% Portafolio'] = (df_results['Inversión Total'] / total_inversion_after_limit) * 100
     
+=======
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
     df_results = df_results.sort_values("Volatilidad ATR (%)", ascending=True)
     
     # Mostrar tabla con Rich
@@ -7069,6 +7138,19 @@ def suggest_technical(
     console.print(f"\n[bold yellow]⏳ Acciones para ESPERAR Y MONITOREAR ({len(acciones_mantener)}):[/bold yellow] {', '.join(acciones_mantener)}")
 
 def set_optimizar_portafolio():
+<<<<<<< HEAD
+=======
+    input_amount = (
+        input("Enter the amount to invest (i.e. 400000): ")
+        .replace(",", "")
+        .replace("$", "")
+        .strip()
+    )
+    if not input_amount:  # Si el usuario no ingresa nada
+        input_amount = 400000  # Valor por defecto
+    else:
+        input_amount = int(float(input_amount))  # Convertir a número
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
     input_tickers = str(
         input("Enter tickers separated by commas (i.e. OMAB,AAPL,META,MSFT): ")
     )
@@ -7089,6 +7171,7 @@ def set_optimizar_portafolio():
     tickers = []
     for i in input_tickers_list:
         tickers.append(i)
+<<<<<<< HEAD
     
     # Calcular capital óptimo basado en número de tickers
     optimal_capital = calculate_optimal_capital(tickers)
@@ -7105,18 +7188,37 @@ def set_optimizar_portafolio():
     
     print("\nTickers list : ", tickers)
     print(f"Capital total: ${input_amount:,}")
+=======
+    print("\nTickers list : ", tickers)
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
     print("\nOptimizing portfolio...")
     try:
         allocation_dataframe = markovitz_portfolio_optimization(
             tickers, input_amount, input_initial_date
         )
+<<<<<<< HEAD
         # Aplicar límite de asignación por ticker
         allocation_dataframe = apply_max_allocation_limit(allocation_dataframe)
+=======
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
         print(allocation_dataframe)
     except Exception as e:
         print(e)
 
 def set_optimizar_portafolio2():
+<<<<<<< HEAD
+=======
+    input_amount = (
+        input("Enter the amount to invest (i.e. 400000): ")
+        .replace(",", "")
+        .replace("$", "")
+        .strip()
+    )
+    if not input_amount:  # Si el usuario no ingresa nada
+        input_amount = 400000  # Valor por defecto
+    else:
+        input_amount = int(float(input_amount))  # Convertir a número
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
     input_tickers = str(
         input("Enter tickers separated by commas (i.e. OMAB,AAPL,META,MSFT): ")
     )
@@ -7137,6 +7239,7 @@ def set_optimizar_portafolio2():
     tickers = []
     for i in input_tickers_list:
         tickers.append(i)
+<<<<<<< HEAD
     
     # Calcular capital óptimo basado en número de tickers
     optimal_capital = calculate_optimal_capital(tickers)
@@ -7154,12 +7257,19 @@ def set_optimizar_portafolio2():
     print("\nTickers list : ", tickers)
     print(f"Capital total: ${input_amount:,}")
     print("\nOptimizing portfolio by momentum...")
+=======
+    print("\nTickers list : ", tickers)
+    print("\nOptimizing portfolio by momentuu...")
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
     try:
         allocation_dataframe = portfolio_optimization_sharpe_short_term(
             tickers, input_amount, input_initial_date
         )
+<<<<<<< HEAD
         # Aplicar límite de asignación por ticker
         allocation_dataframe = apply_max_allocation_limit(allocation_dataframe)
+=======
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
         print(allocation_dataframe)
     except Exception as e:
         print(e)
@@ -9819,10 +9929,15 @@ def main():
 # No olvides actualizar la llamada en tu menú principal
 def estrategia_acumulacion_intraday_menu():
     ticker = Prompt.ask("Ticker", default="TECL")
+<<<<<<< HEAD
     # Calcular capital óptimo basado en un solo ticker
     optimal_capital = calculate_optimal_capital([ticker])
     capital_total_str = Prompt.ask("Capital total", default=str(optimal_capital))
     capital_total = float(capital_total_str) if capital_total_str else optimal_capital
+=======
+    capital_total_str = Prompt.ask("Capital total", default="400000")
+    capital_total = float(capital_total_str) if capital_total_str else 400000.0
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
     num_escalones_str = Prompt.ask("Número de escalones (2-4)", default="3")
     num_escalones = int(num_escalones_str) if num_escalones_str else 3
     
@@ -9932,10 +10047,15 @@ def estrategia_acumulacion_diaria_estimada(ticker: str, capital_total: float = 1
 # No olvides actualizar la llamada en tu menú principal
 def estrategia_acumulacion_intraday_menu():
     ticker = Prompt.ask("Ticker", default="TECL")
+<<<<<<< HEAD
     # Calcular capital óptimo basado en un solo ticker
     optimal_capital = calculate_optimal_capital([ticker])
     capital_total_str = Prompt.ask("Capital total", default=str(optimal_capital))
     capital_total = float(capital_total_str) if capital_total_str else optimal_capital
+=======
+    capital_total_str = Prompt.ask("Capital total", default="400000")
+    capital_total = float(capital_total_str) if capital_total_str else 400000.0
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
     num_escalones_str = Prompt.ask("Número de escalones (2-4)", default="3")
     num_escalones = int(num_escalones_str) if num_escalones_str else 3
     
@@ -10413,7 +10533,11 @@ def reversion_media_bollinger(tickers: list = None, periodo_bollinger: int = 20,
     return resultados
 
 
+<<<<<<< HEAD
 def analisis_cuantitativo_completo(tickers: list = None, capital_total: float = None):
+=======
+def analisis_cuantitativo_completo(tickers: list = None, capital_total: float = 50000):
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
     """
     Análisis Cuantitativo Completo que combina todas las estrategias:
     1. Acumulación Intradía (Scaling In)
@@ -10422,15 +10546,22 @@ def analisis_cuantitativo_completo(tickers: list = None, capital_total: float = 
     
     Args:
         tickers: Lista de tickers a analizar
+<<<<<<< HEAD
         capital_total: Capital total disponible para distribución (se calcula automáticamente si no se especifica)
+=======
+        capital_total: Capital total disponible para distribución
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
     """
     if tickers is None:
         tickers = ['SOXL', 'SOXS', 'SPXL', 'SPXS', 'TQQQ', 'SQQQ', 'TECL', 'TECS', 'FAS', 'FAZ']
     
+<<<<<<< HEAD
     # Calcular capital óptimo si no se especifica
     if capital_total is None:
         capital_total = calculate_optimal_capital(tickers)
     
+=======
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
     console.print("[bold blue]🧮 ANÁLISIS CUANTITATIVO COMPLETO[/bold blue]")
     console.print(f"[yellow]Capital Total: ${capital_total:,.2f} | Tickers: {len(tickers)}[/yellow]")
     console.print("=" * 80)
@@ -10456,8 +10587,13 @@ def analisis_cuantitativo_completo(tickers: list = None, capital_total: float = 
     # 3. Estrategias de Acumulación Escalonada
     console.print("\n[bold cyan]3️⃣ ESTRATEGIAS DE ACUMULACIÓN ESCALONADA[/bold cyan]")
     
+<<<<<<< HEAD
     # Distribuir capital entre las oportunidades respetando el límite máximo
     capital_por_ticker = min(capital_total / len(oportunidades_compra), MAX_ALLOCATION_PER_TICKER)
+=======
+    # Distribuir capital entre las oportunidades
+    capital_por_ticker = capital_total / len(oportunidades_compra)
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
     
     estrategias_completas = []
     
@@ -10808,9 +10944,13 @@ def estrategia_acumulacion_diaria_estimada(ticker: str, capital_total: float = 1
 def estrategia_acumulacion_intraday_menu():
     """Menú interactivo para la estrategia de acumulación con datos robustos"""
     ticker = input("Ticker (default='TECL'): ") or "TECL"
+<<<<<<< HEAD
     # Calcular capital óptimo basado en un solo ticker
     optimal_capital = calculate_optimal_capital([ticker])
     capital_total_str = input(f"Capital total (default='{optimal_capital}'): ") or str(optimal_capital)
+=======
+    capital_total_str = input("Capital total (default='400000'): ") or "400000"
+>>>>>>> 2617d241ac5775c7b602ea3ecbc10b528558bc4f
     capital_total = float(capital_total_str)
     num_escalones_str = input("Número de escalones (2-4) (default='3'): ") or "3"
     num_escalones = int(num_escalones_str)
