@@ -17,6 +17,409 @@ MAX_ALLOCATION_PER_TICKER = 400000  # $400,000 por ticker máximo
 CAPITAL_BASE_HIGH = 800000  # Para más de 3 tickers
 CAPITAL_BASE_LOW = 600000   # Para 3 o menos tickers
 
+# Configuración de cuentas para la plataforma del reto Actinver
+ACCOUNTS_FILE = "data/actinver_accounts.json"
+
+def load_accounts():
+    """Cargar cuentas desde archivo JSON"""
+    try:
+        if os.path.exists(ACCOUNTS_FILE):
+            with open(ACCOUNTS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        else:
+            # Crear archivo con cuentas predeterminadas
+            default_accounts = [
+                {"usuario": "natalia.sofia.glz@gmail.com", "password": "Ntlasfa9#19", "nombre": "Natalia"},
+                {"usuario": "osvaldo.hdz.m@outlook.com", "password": "299792458.Light", "nombre": "Osvaldo"},
+            ]
+            save_accounts(default_accounts)
+            return default_accounts
+    except Exception as e:
+        console.print(f"[red]Error cargando cuentas: {e}[/red]")
+        return []
+
+def save_accounts(accounts):
+    """Guardar cuentas en archivo JSON"""
+    try:
+        os.makedirs('data', exist_ok=True)
+        with open(ACCOUNTS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(accounts, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        console.print(f"[red]Error guardando cuentas: {e}[/red]")
+        return False
+
+def add_account():
+    """Agregar nueva cuenta"""
+    console.print("[bold blue]➕ Agregar Nueva Cuenta Actinver[/bold blue]")
+    console.print("=" * 50)
+    
+    nombre = input("Nombre de la cuenta: ").strip()
+    if not nombre:
+        console.print("[red]❌ El nombre es requerido[/red]")
+        return
+    
+    usuario = input("Correo electrónico: ").strip()
+    if not usuario:
+        console.print("[red]❌ El correo es requerido[/red]")
+        return
+    
+    password = input("Contraseña: ").strip()
+    if not password:
+        console.print("[red]❌ La contraseña es requerida[/red]")
+        return
+    
+    # Cargar cuentas existentes
+    accounts = load_accounts()
+    
+    # Verificar si ya existe
+    for account in accounts:
+        if account['usuario'] == usuario:
+            console.print("[red]❌ Esta cuenta ya existe[/red]")
+            return
+    
+    # Agregar nueva cuenta
+    new_account = {
+        "usuario": usuario,
+        "password": password,
+        "nombre": nombre
+    }
+    accounts.append(new_account)
+    
+    if save_accounts(accounts):
+        console.print(f"[green]✅ Cuenta '{nombre}' agregada exitosamente[/green]")
+    else:
+        console.print("[red]❌ Error guardando la cuenta[/red]")
+    
+    input("\nPresiona Enter para continuar...")
+
+def show_accounts():
+    """Mostrar cuentas registradas"""
+    console.print("[bold blue]👥 Cuentas Registradas[/bold blue]")
+    console.print("=" * 50)
+    
+    accounts = load_accounts()
+    if not accounts:
+        console.print("[yellow]No hay cuentas registradas[/yellow]")
+        return
+    
+    for i, account in enumerate(accounts, 1):
+        console.print(f"{i}. {account['nombre']} - {account['usuario']}")
+    
+    input("\nPresiona Enter para continuar...")
+
+def select_account():
+    """Seleccionar cuenta para usar"""
+    accounts = load_accounts()
+    if not accounts:
+        console.print("[red]❌ No hay cuentas registradas[/red]")
+        return None, None
+    
+    console.print("[bold blue]🔐 Seleccionar Cuenta[/bold blue]")
+    console.print("=" * 40)
+    
+    for i, account in enumerate(accounts, 1):
+        console.print(f"{i}. {account['nombre']} - {account['usuario']}")
+    
+    try:
+        choice = int(input(f"\nSelecciona una cuenta (1-{len(accounts)}): "))
+        if 1 <= choice <= len(accounts):
+            selected = accounts[choice - 1]
+            console.print(f"[green]✅ Cuenta seleccionada: {selected['nombre']}[/green]")
+            return selected['usuario'], selected['password']
+        else:
+            console.print("[red]❌ Selección inválida[/red]")
+            return None, None
+    except ValueError:
+        console.print("[red]❌ Entrada inválida[/red]")
+        return None, None
+
+# Definir la lista de tickers excluidos antes de usarla
+IGNORE_HOUSE_INSTRUMENTS = {
+    "CPE",      # CPE (datos vacíos)
+    "MRO",      # MRO (datos vacíos) 
+    "PARA",     # PARA (datos vacíos)
+    "R",        # R (datos vacíos)
+    "ZM",
+}
+
+def filter_excluded_tickers(tickers):
+    """
+    Filtra tickers excluidos de la lista de análisis
+    Remueve tickers que están en IGNORE_HOUSE_INSTRUMENTS
+    """
+    if not tickers:
+        return tickers
+    
+    # Convertir a lista si es necesario
+    if isinstance(tickers, str):
+        tickers = [tickers]
+    
+    # Filtrar tickers excluidos
+    filtered = []
+    excluded = []
+    
+    for ticker in tickers:
+        ticker_clean = ticker.strip().upper()
+        if ticker_clean not in IGNORE_HOUSE_INSTRUMENTS:
+            filtered.append(ticker)
+        else:
+            excluded.append(ticker_clean)
+    
+    # Mostrar tickers excluidos si los hay
+    if excluded:
+        console.print(f"[yellow]⚠️ Tickers excluidos (datos vacíos): {', '.join(excluded)}[/yellow]")
+    
+    return filtered
+
+def get_prices_from_reto_actinver():
+    """
+    Obtiene precios actuales del archivo de datos de Reto Actinver
+    Formato: 1A|AA1|*|679.99|679.99|1|0|0|0.000000|0.000000|0|0|0.000000|0.0|1|0|0|1000|639.610000|2000|672.390000|
+    """
+    try:
+        url = "https://www.retoactinver.com/archivos/datosReto.txt"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        
+        prices = {}
+        lines = response.text.strip().split('\n')
+        
+        for line in lines:
+            if not line.strip():
+                continue
+                
+            parts = line.split('|')
+            if len(parts) < 5:
+                continue
+                
+            try:
+                symbol = parts[1]  # Símbolo del stock
+                current_price = float(parts[3])  # Precio actual
+                prices[symbol] = current_price
+            except (ValueError, IndexError):
+                continue
+                
+        return prices
+    except Exception as e:
+        console.print(f"[red]⚠️ Error obteniendo precios de Reto Actinver: {e}[/red]")
+        return {}
+
+
+def inicio_sesion_rapido_vivo():
+    """
+    Inicio de sesión rápido en vivo - Abre un navegador con login manual
+    Permite seleccionar cuenta y llenar credenciales automáticamente
+    """
+    console.print("[bold blue]🚀 Inicio de Sesión Rápido en Vivo - Reto Actinver 2025[/bold blue]")
+    console.print("=" * 70)
+    console.print("[cyan]Selecciona una cuenta y se llenarán las credenciales automáticamente[/cyan]")
+
+    try:
+        # Importar Playwright
+        from playwright.sync_api import sync_playwright
+        
+        console.print("[yellow]🔧 Inicializando Playwright...[/yellow]")
+        
+        # Seleccionar cuenta
+        username, password = select_account()
+        if not username or not password:
+            console.print("[red]❌ No se pudo seleccionar una cuenta[/red]")
+            return
+        
+        console.print(f"[green]✅ Cuenta seleccionada: {username}[/green]")
+        
+        with sync_playwright() as p:
+            # Configurar el navegador
+            browser = p.chromium.launch(
+                headless=False,
+                args=[
+                    '--start-maximized',
+                    '--disable-web-security',
+                    '--disable-features=VizDisplayCompositor',
+                    '--ignore-certificate-errors',
+                    '--ignore-ssl-errors',
+                    '--allow-running-insecure-content',
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-dev-shm-usage',
+                    '--no-sandbox',
+                    '--disable-gpu',
+                    '--disable-extensions',
+                    '--disable-plugins',
+                    '--disable-default-apps',
+                    '--disable-sync',
+                    '--disable-translate',
+                    '--no-first-run',
+                    '--no-default-browser-check',
+                    '--disable-logging',
+                    '--mute-audio'
+                ]
+            )
+            
+            # Crear contexto del navegador
+            context = browser.new_context(
+                viewport={'width': 1920, 'height': 1080},
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            )
+
+            # Crear nueva página
+            page = context.new_page()
+            
+            console.print("[green]🌐 Navegando a la plataforma del reto...[/green]")
+            
+            # Navegar a la URL correcta del reto
+            page.goto("https://www.retoactinver.com/RetoActinver/", wait_until='domcontentloaded', timeout=30000)
+            console.print("[blue]✅ Página cargada[/blue]")
+            
+            # Esperar a que cargue completamente
+            page.wait_for_timeout(5000)
+            
+            console.print("[yellow]🔐 Llenando credenciales automáticamente...[/yellow]")
+            
+            try:
+                # Buscar y llenar campo de usuario
+                console.print("[blue]🔍 Buscando campo de usuario...[/blue]")
+                
+                # Múltiples selectores para el campo de usuario
+                user_selectors = [
+                    'input[type="email"]',
+                    'input[name="email"]',
+                    'input[name="usuario"]',
+                    'input[name="username"]',
+                    'input[placeholder*="email" i]',
+                    'input[placeholder*="usuario" i]',
+                    'input[id*="email" i]',
+                    'input[id*="user" i]'
+                ]
+                
+                user_input = None
+                for selector in user_selectors:
+                    try:
+                        user_input = page.locator(selector).first
+                        if user_input.is_visible(timeout=2000):
+                            console.print(f"[green]✅ Campo de usuario encontrado: {selector}[/green]")
+                            break
+                    except:
+                        continue
+                
+                if user_input and user_input.is_visible():
+                    user_input.clear()
+                    user_input.fill(username)
+                    console.print("[green]✅ Usuario ingresado[/green]")
+                else:
+                    console.print("[yellow]⚠️ No se encontró campo de usuario, llenar manualmente[/yellow]")
+                
+                # Buscar y llenar campo de contraseña
+                console.print("[blue]🔍 Buscando campo de contraseña...[/blue]")
+                
+                password_selectors = [
+                    'input[type="password"]',
+                    'input[name="password"]',
+                    'input[name="pass"]',
+                    'input[placeholder*="contraseña" i]',
+                    'input[placeholder*="password" i]',
+                    'input[id*="pass" i]'
+                ]
+                
+                password_input = None
+                for selector in password_selectors:
+                    try:
+                        password_input = page.locator(selector).first
+                        if password_input.is_visible(timeout=2000):
+                            console.print(f"[green]✅ Campo de contraseña encontrado: {selector}[/green]")
+                            break
+                    except:
+                        continue
+                
+                if password_input and password_input.is_visible():
+                    password_input.clear()
+                    password_input.fill(password)
+                    console.print("[green]✅ Contraseña ingresada[/green]")
+                else:
+                    console.print("[yellow]⚠️ No se encontró campo de contraseña, llenar manualmente[/yellow]")
+                
+                # Buscar botón de login
+                console.print("[blue]🔍 Buscando botón de login...[/blue]")
+                
+                login_selectors = [
+                    'button[type="submit"]',
+                    'input[type="submit"]',
+                    'button:has-text("Iniciar")',
+                    'button:has-text("Login")',
+                    'button:has-text("Entrar")',
+                    'button:has-text("Sign in")',
+                    'input[value*="Iniciar" i]',
+                    'input[value*="Login" i]'
+                ]
+                
+                login_button = None
+                for selector in login_selectors:
+                    try:
+                        login_button = page.locator(selector).first
+                        if login_button.is_visible(timeout=2000):
+                            console.print(f"[green]✅ Botón de login encontrado: {selector}[/green]")
+                            break
+                    except:
+                        continue
+                
+                if login_button and login_button.is_visible():
+                    console.print("[yellow]🔑 Haciendo clic en el botón de login...[/yellow]")
+                    login_button.click()
+                    console.print("[green]✅ Login iniciado[/green]")
+                else:
+                    console.print("[yellow]⚠️ No se encontró botón de login, presionar Enter o hacer clic manualmente[/yellow]")
+                    if password_input:
+                        password_input.press('Enter')
+                
+                # Esperar a que se procese el login
+                page.wait_for_timeout(3000)
+                
+                console.print("[green]🎯 Navegador abierto con credenciales llenadas[/green]")
+                console.print("[blue]💡 Puedes completar el login manualmente si es necesario[/blue]")
+                
+            except Exception as e:
+                console.print(f"[yellow]⚠️ Error durante el llenado automático: {e}[/yellow]")
+                console.print("[blue]💡 Las credenciales están listas para llenar manualmente[/blue]")
+                console.print(f"[cyan]👤 Usuario: {username}[/cyan]")
+                console.print(f"[cyan]🔑 Contraseña: {password}[/cyan]")
+
+            # Mantener el navegador abierto
+            console.print("\n[bold cyan]📋 INSTRUCCIONES:[/bold cyan]")
+            console.print("• El navegador permanecerá abierto con las credenciales llenadas")
+            console.print("• Puedes completar el login manualmente si es necesario")
+            console.print("• Para cerrar, simplemente cierra la ventana del navegador")
+            console.print("• O presiona Ctrl+C en esta terminal para cerrar el programa")
+
+            # Esperar hasta que el usuario cierre el navegador o presione Ctrl+C
+            try:
+                while True:
+                    page.wait_for_timeout(1000)
+                    # Verificar si la página sigue activa
+                    if page.is_closed():
+                        break
+            except KeyboardInterrupt:
+                console.print("\n[yellow]🛑 Cerrando navegador...[/yellow]")
+                browser.close()
+                console.print("[green]✅ Sesión cerrada exitosamente[/green]")
+                return
+                
+    except ImportError:
+        console.print("[red]❌ Error: Playwright no está instalado[/red]")
+        console.print("[yellow]💡 Para instalar Playwright, ejecuta:[/yellow]")
+        console.print("[cyan]pip install playwright[/cyan]")
+        console.print("[cyan]playwright install chromium[/cyan]")
+        console.print("\n[red]❌ No se puede continuar sin Playwright[/red]")
+        return
+        
+    except Exception as e:
+        console.print(f"[red]❌ Error inesperado: {e}[/red]")
+        console.print("[yellow]💡 Verifica tu conexión a internet y la URL del sitio[/yellow]")
+        console.print("\n[red]❌ No se pudo abrir el navegador[/red]")
+        return
+    
+    console.print("\n[bold green]✅ Función completada[/bold green]")
+    input("\nPresiona Enter para continuar...")
+
 def show_system_config():
     """
     Muestra la configuración actual del sistema de límites de capital
@@ -270,20 +673,74 @@ def normalize_ticker_to_mx(ticker: str) -> str:
         "TLEVISA": "TLEVISACPO.MX",
         "WALMEX": "WALMEX.MX",
         "FEMSA": "FEMSAUBD.MX",
-        # Variantes 1 vs sin sufijo
-        "OXY1": "OXY.MX",
+        "OXY1": "OXY1.MX",
         "CPE": "CPE.MX",
-        # ETFs locales comunes
         "NAFTRAC": "NAFTRAC.MX",
+        "ACTDUAL": "ACTDUALE.MX",
+        "ACTI500": "ACTI500B.MX",
+  "ALPEK": "ALPEKA.MX",
+  "ACTICOB": "ACTICOBB.MX",
+  "ACTICRE": "ACTICREB.MX",
+ "ACTIG+2": "ACTIG+2M.MX",
+  "ACTIG+": "ACTIG+B.MX",
+"ACTIGOB": "ACTIGOBB.MX",
+  "ACTIMED": "ACTIMEDB.MX",
+ "ACTIPLU": "ACTIPLUM.MX",
+  "ACTIREN": "ACTIRENB.MX",
+"ACTIVAR" : "ACTIVARA.MX",
+  "DIGITAL": "BRMG.TA.MX",
+ "DINAMO": "DINAMOB.MX",
+  "ESCALA": "ESCALAB.MX",
+"ESFERA" : "ESFERAA.MX",
+  "MAXIMO": "MAXIMOB.MX",
+ "MAYA": "MAYAA.MX",
+  "OPORT1" : "OPORT1B.MX",
+"ACTINVR" : "ACTINVRB.MX",
+  "ALTERN": "ALTERNA.MX",
+ "AMX" : "AMX.MX",
+  "ASUR" : "ASURB.MX", 
+"BBAJIO" : "BBAJIOO.MX",
+  "CHDRAUI": "CHDRAUIB.MX",
+ "CPE": "CPE.L.MX",
+  "FIBRAMQ": "FIBRAMQ12.MX",
+"FIBRAPL" : "FIBRAPL14.MX",
+  "FUNO": "FUNO11.MX",
+ "GAP": "GAP.MX",
+  "GCARSO": "GCARSOA1.MX",
+"GFINBUR" : "GFINBURO.MX",
+  "GFNORTE": "GFNORTEO.MX",
+ "GOLD": "GC=F.MX",
+  "GRUMA": "GRUMAB.MX",
+"JPMRVUS" : "JPMRVUSE.MX",
+  "KOF": "KOF.MX",
+ "MEGA": "MEGACPO.MX",
+  "MFRISCO": "MFRISCOA-1.MX",
+"MRO" : "MROL.MX",
+  "OMA": "OMAB.MX",
+ "PARA": "PAR.AX.MX",
+  "R": "R.MX",
+"SITES1" : "SITES1A1.MX",
+  "TEMATIK": "TEMATIKB.MX",
+ "TERRA": "TER.AX.MX",
+  "TSM" : "TSM.MX",
+"VNQ" : "VNQ.MX",
+  "VOLAR": "VOLARA.MX",
+  "ROBOTIK": "ROBOTIKB.MX",
+ "SALUD": "SALUDB.MX",     
+         "AMX": "AMXB.MX",
+"DIGITAL": "WDC.MX",
+"GAP": "GAP1.MX",
+"GOLD": "GGAN.MX",
+"KOF": "KOFUBL.MX",
+"SITES1": "SITES1A-1.MX",
+"TERRA": "TERRA13.MX",
+"TSM": "TSMN.MX",             
+       
     }
 
     # Instrumentos de casa Actinver que no existen en Yahoo (omitir para evitar 404)
-    ACTINVER_HOUSE_INSTRUMENTS = {
-        "ACTI500", "ACTICRE", "ACTICOB", "ACTDUAL", "ACTIREN", "ACTIMED",
-        "ACTIGOB", "ACTIG+", "ACTIG+2", "ACTIVAR", "ACTIPLU", "DIGITAL",
-        "ESFERA", "ESCALA", "DINAMO", "MAYA", "MAXIMO", "SALUD", "ROBOTIK",
-        "OPORT1"
-    }
+    # Tickers con datos vacíos o problemas de descarga
+    # IGNORE_HOUSE_INSTRUMENTS ya está definido globalmente arriba
 
     # Limpiar y convertir a mayúsculas
     raw = ticker.strip()
@@ -306,7 +763,7 @@ def normalize_ticker_to_mx(ticker: str) -> str:
         symbol = base
 
     # Si es instrumento de casa Actinver, devolver marcador especial para omitir
-    if symbol in ACTINVER_HOUSE_INSTRUMENTS:
+    if symbol in IGNORE_HOUSE_INSTRUMENTS:
         return "__SKIP_ACTINVER__"
 
     # Resolver alias conocidos
@@ -5448,7 +5905,10 @@ def suggest_technical_soon_results():
         console.print(
             f"\n[bold yellow] No se detectó entrada, usando valores sugeridos por defecto...[/bold yellow]"
         )
-        tickers = default_tickers  # Usar los tickers por defecto
+        tickers = default_tickers
+    
+    # Filtrar tickers excluidos
+    tickers = filter_excluded_tickers(tickers)  # Usar los tickers por defecto
 
     resultados = []  # Para almacenar los resultados
     acciones_comprar = []  # Para las acciones recomendadas para comprar
@@ -6203,7 +6663,9 @@ def volatility_based_capital_allocation():
         tickers = [ticker.strip().upper() for ticker in input_tickers.split(",")]
     else:
         tickers = default_tickers
-        console.print(f"[yellow]📊 Usando ETFs por defecto...[/yellow]")
+    
+    # Filtrar tickers excluidos
+    tickers = filter_excluded_tickers(tickers)
     
     # Parámetros de gestión de riesgo
     try:
@@ -6450,6 +6912,9 @@ def suggest_enhanced_etf_strategy_leveraged(
         tickers = [ticker.strip().upper() for ticker in input_tickers.split(",")]
     else:
         console.print(f"\n[bold yellow]📊 Usando ETFs apalancados sugeridos por defecto...[/bold yellow]")
+    
+    # Filtrar tickers excluidos
+    tickers = filter_excluded_tickers(tickers)
 
     resultados = []
     etf_comprar_oportunidad = []  # ETFs con tendencia alcista pero caída hoy
@@ -6984,6 +7449,14 @@ def suggest_technical(
             close = df_ticker["Close"]
             high = df_ticker["High"]
             low = df_ticker["Low"]
+            
+            # Asegurar que sean Series 1D para indicadores técnicos
+            if isinstance(close, pd.DataFrame):
+                close = close.iloc[:, 0]
+            if isinstance(high, pd.DataFrame):
+                high = high.iloc[:, 0]
+            if isinstance(low, pd.DataFrame):
+                low = low.iloc[:, 0]
 
             # Bandas de Bollinger (20 periodos, 2 desviaciones estándar) - Estándar y efectivo
             bollinger = BollingerBands(close, window=20, window_dev=2)
@@ -8007,12 +8480,18 @@ def test_session1():
 def utilidades_actinver_2024():
     # Construcción del menú con secciones
     menu_items = [
+        { 'type': 'item', 'text': 'Inicio de sesión rápido en vivo', 'action': inicio_sesion_rapido_vivo },
         { 'type': 'item', 'text': 'Probar Credenciales de sesión en la plataforma del reto', 'action': test_session },
+        { 'type': 'separator' },
+        { 'type': 'item', 'text': 'Agregar nueva cuenta Actinver', 'action': add_account },
+        { 'type': 'item', 'text': 'Mostrar cuentas registradas', 'action': show_accounts },
+        { 'type': 'separator' },
         { 'type': 'item', 'text': 'Obtener pregunta de Quizz diario', 'action': option_2 },
         { 'type': 'item', 'text': 'Resolver Quizz diario', 'action': answer_quiz_daily_contest_actinver },
         { 'type': 'item', 'text': 'Programar respuesta automática de Quizz diario', 'action': start_scheduled_quiz },
         { 'type': 'item', 'text': 'Resolver Quizz semanal', 'action': answer_quiz_weekly_contest_actinver },
         { 'type': 'item', 'text': 'Programar respuesta automática de Quizz semanal', 'action': start_scheduled_weekly_quiz },
+        { 'type': 'separator' },
         { 'type': 'item', 'text': 'Mostrar sugerencias de compra', 'action': option_5 },
         { 'type': 'item', 'text': 'Mostrar portafolio actual', 'action': option_6 },
         { 'type': 'item', 'text': 'Comprar acciones', 'action': option_7 },
@@ -8020,6 +8499,7 @@ def utilidades_actinver_2024():
         { 'type': 'item', 'text': 'Monitorear venta', 'action': option_9 },
         { 'type': 'item', 'text': 'Vender todas las posiciones en portafolio (a precio del mercado)', 'action': test_session0 },
         { 'type': 'item', 'text': 'Restaurar sesión en plataforma del reto', 'action': test_session1 },
+        { 'type': 'separator' },
         { 'type': 'item', 'text': 'Listar tareas programadas', 'action': list_tasks_scheduled },
         { 'type': 'item', 'text': 'Monitor de Stocks (GUI)', 'action': monitor_stocks_gui },
         { 'type': 'item', 'text': 'Reporte Visual', 'action': daily_visual_report },
@@ -8043,17 +8523,20 @@ def utilidades_actinver_2024():
         console.print("[bold blue]Utilidades - Reto Actinver 2025:[/bold blue]")
         current_display_num = 1
         for i, item in enumerate(menu_items):
-            if item['type'] == 'item':
+            if item['type'] == 'separator':
+                console.print("")
+            elif item['type'] == 'item':
                 prefix = "→ " if i == selected_index else "   "
                 if item['text'] == "Regresar":
-                    console.print(f"{prefix}0. {item['text']}")
+                    console.print(f"{prefix}b. {item['text']}")
                 else:
                     console.print(f"{prefix}{current_display_num}. {item['text']}")
                     current_display_num += 1
+        console.print("   q. Salir")
 
     ch = ''  # Inicializa ch
 
-    while ch != 'q':
+    while ch != b'q':
         display_menu(selected_index)
         ch = getch()  # Lee un carácter de la entrada
 
@@ -8084,7 +8567,9 @@ def utilidades_actinver_2024():
                 break
             selected_option['action']()
             Prompt.ask("[bold blue]Pulsa Enter para continuar...[/bold blue]")
-        elif ch == b'q':
+        elif ch == b'b' or ch == b'B':  # Tecla 'b' para regresar
+            break
+        elif ch == b'q' or ch == b'Q':  # Tecla 'q' para salir
             break
         elif ch == b':':
             opcion_main_menu = Prompt.ask("[bold green] cmd [/bold green]")        
@@ -8692,7 +9177,8 @@ def generate_html_dashboard_visual(analysis_data, symbols, category_name):
         from advanced_charts import (
             create_advanced_momentum_heatmap, create_risk_adjusted_returns_chart,
             create_correlation_matrix, create_relative_strength_chart,
-            create_market_overview_dashboard, generate_executive_summary
+            create_market_overview_dashboard, generate_executive_summary,
+            create_specific_correlations_chart
         )
         
         # 1. Heatmap Avanzado de Momentum con RSI y Squeeze
@@ -8822,6 +9308,8 @@ def generate_html_dashboard_visual(analysis_data, symbols, category_name):
     try:
         # Matriz de Correlación
         correlation_html = create_correlation_matrix(analysis_data)
+        
+        # Correlaciones Específicas eliminadas por solicitud del usuario
         
         # Fuerza Relativa vs Benchmark
         relative_strength_html = create_relative_strength_chart(analysis_data)
@@ -9344,14 +9832,27 @@ def monitor_stocks_gui(update_interval_ms: int = 3000, top_n: int = 15):
     ttk.Label(selector_frame, text="Modo:").pack(side=tk.LEFT, padx=5)
     mode_var = tk.StringVar(value="Top 10")
     mode_combo = ttk.Combobox(selector_frame, textvariable=mode_var, 
-                              values=["Top 10","Ticker específico"], 
+                              values=["Top 10","Ticker específico","Ticker vs Ticker"], 
                               state="readonly", width=15)
     mode_combo.pack(side=tk.LEFT, padx=5)
     
-    ttk.Label(selector_frame, text="Ticker:").pack(side=tk.LEFT, padx=5)
+    # Frame para controles de ticker (se mostrará/ocultará según el modo)
+    ticker_frame = ttk.Frame(selector_frame)
+    ticker_frame.pack(side=tk.LEFT, padx=5)
+    
+    ttk.Label(ticker_frame, text="Ticker:").pack(side=tk.LEFT, padx=5)
     ticker_var = tk.StringVar(value="AAPL")
-    ticker_combo = ttk.Combobox(selector_frame, textvariable=ticker_var, values=[], state="readonly", width=14)
+    ticker_combo = ttk.Combobox(ticker_frame, textvariable=ticker_var, values=[], state="readonly", width=14)
     ticker_combo.pack(side=tk.LEFT, padx=5)
+    
+    # Frame para controles de comparación (solo visible en modo Ticker vs Ticker)
+    comparison_frame = ttk.Frame(selector_frame)
+    comparison_frame.pack(side=tk.LEFT, padx=5)
+    
+    ttk.Label(comparison_frame, text="Ticker 2:").pack(side=tk.LEFT, padx=5)
+    ticker2_var = tk.StringVar(value="MSFT")
+    ticker2_combo = ttk.Combobox(comparison_frame, textvariable=ticker2_var, values=[], state="readonly", width=14)
+    ticker2_combo.pack(side=tk.LEFT, padx=5)
 
     # Gráficas en la sección superior
     fig = Figure(figsize=(16, 8), dpi=100)
@@ -9468,11 +9969,23 @@ def monitor_stocks_gui(update_interval_ms: int = 3000, top_n: int = 15):
             symbols_cache = symbols_now
             try:
                 ticker_combo['values'] = symbols_cache
+                ticker2_combo['values'] = symbols_cache
             except Exception:
                 pass
 
-        # Actualizar tabla según modo seleccionado
+        # Mostrar/ocultar controles según el modo
         mode = mode_var.get()
+        if mode == "Top 10":
+            ticker_frame.pack_forget()
+            comparison_frame.pack_forget()
+        elif mode == "Ticker específico":
+            ticker_frame.pack(side=tk.LEFT, padx=5)
+            comparison_frame.pack_forget()
+        elif mode == "Ticker vs Ticker":
+            ticker_frame.pack(side=tk.LEFT, padx=5)
+            comparison_frame.pack(side=tk.LEFT, padx=5)
+        
+        # Actualizar tabla según modo seleccionado
         records_to_show = all_records.copy()
         
         if mode == "Top 10":
@@ -9481,6 +9994,13 @@ def monitor_stocks_gui(update_interval_ms: int = 3000, top_n: int = 15):
             sel = ticker_var.get().strip().upper()
             if sel:
                 records_to_show = [r for r in all_records if r['symbol'].upper() == sel]
+            else:
+                records_to_show = []
+        elif mode == "Ticker vs Ticker":
+            sel1 = ticker_var.get().strip().upper()
+            sel2 = ticker2_var.get().strip().upper()
+            if sel1 and sel2:
+                records_to_show = [r for r in all_records if r['symbol'].upper() in [sel1, sel2]]
             else:
                 records_to_show = []
         
@@ -9682,6 +10202,114 @@ def monitor_stocks_gui(update_interval_ms: int = 3000, top_n: int = 15):
                         ax.text(0.5, 0.5, f"No hay datos para {sel}", 
                                ha='center', va='center', transform=ax.transAxes)
 
+        elif mode == "Ticker vs Ticker":
+            # 4 gráficas comparativas entre dos tickers
+            ax1 = fig.add_subplot(2, 2, 1)
+            ax2 = fig.add_subplot(2, 2, 2)
+            ax3 = fig.add_subplot(2, 2, 3)
+            ax4 = fig.add_subplot(2, 2, 4)
+            
+            sel1 = ticker_var.get().strip().upper()
+            sel2 = ticker2_var.get().strip().upper()
+            
+            if sel1 and sel2:
+                ticker1_data = next((r for r in all_records if r['symbol'].upper() == sel1), None)
+                ticker2_data = next((r for r in all_records if r['symbol'].upper() == sel2), None)
+                
+                if ticker1_data and ticker2_data:
+                    # 1. Comparación de precios actuales
+                    tickers = [sel1, sel2]
+                    prices = [ticker1_data['close'], ticker2_data['close']]
+                    colors = ['blue', 'red']
+                    
+                    bars = ax1.bar(tickers, prices, color=colors, alpha=0.7)
+                    ax1.set_title('Comparación de Precios Actuales')
+                    ax1.set_ylabel('Precio ($)')
+                    ax1.grid(True, alpha=0.3)
+                    
+                    # Agregar valores en las barras
+                    for bar, price in zip(bars, prices):
+                        height = bar.get_height()
+                        ax1.text(bar.get_x() + bar.get_width()/2., height + height*0.01,
+                                f"${price:.2f}", ha='center', va='bottom', fontweight='bold')
+                    
+                    # 2. Comparación de rendimientos del día
+                    returns = [ticker1_data['change_pct'], ticker2_data['change_pct']]
+                    colors_returns = ['green' if r >= 0 else 'red' for r in returns]
+                    
+                    bars2 = ax2.bar(tickers, returns, color=colors_returns, alpha=0.7)
+                    ax2.set_title('Rendimiento del Día (%)')
+                    ax2.set_ylabel('Cambio (%)')
+                    ax2.grid(True, alpha=0.3)
+                    ax2.axhline(y=0, color='black', linestyle='-', alpha=0.5)
+                    
+                    # Agregar valores en las barras
+                    for bar, ret in zip(bars2, returns):
+                        height = bar.get_height()
+                        y_pos = height + (height*0.05 if height >= 0 else height*0.05)
+                        ax2.text(bar.get_x() + bar.get_width()/2., y_pos,
+                                f"{ret:+.2f}%", ha='center', va='bottom' if height >= 0 else 'top', 
+                                fontweight='bold')
+                    
+                    # 3. Comparación de volumen
+                    volumes = [ticker1_data['volume'], ticker2_data['volume']]
+                    
+                    bars3 = ax3.bar(tickers, volumes, color=['purple', 'orange'], alpha=0.7)
+                    ax3.set_title('Comparación de Volumen')
+                    ax3.set_ylabel('Volumen')
+                    ax3.grid(True, alpha=0.3)
+                    
+                    # Agregar valores en las barras
+                    for bar, vol in zip(bars3, volumes):
+                        height = bar.get_height()
+                        ax3.text(bar.get_x() + bar.get_width()/2., height + height*0.01,
+                                f"{vol:,.0f}", ha='center', va='bottom', fontweight='bold')
+                    
+                    # 4. Comparación vs S&P 500 (simulado)
+                    # Para esta comparación, usaremos los rendimientos relativos
+                    # En un caso real, necesitarías datos del S&P 500
+                    spy_data = next((r for r in all_records if r['symbol'].upper() == 'SPY'), None)
+                    
+                    if spy_data:
+                        spy_return = spy_data['change_pct']
+                        relative_returns = [ticker1_data['change_pct'] - spy_return, 
+                                          ticker2_data['change_pct'] - spy_return]
+                        colors_relative = ['green' if r >= 0 else 'red' for r in relative_returns]
+                        
+                        bars4 = ax4.bar(tickers, relative_returns, color=colors_relative, alpha=0.7)
+                        ax4.set_title('Rendimiento Relativo vs S&P 500 (%)')
+                        ax4.set_ylabel('Rendimiento Relativo (%)')
+                        ax4.grid(True, alpha=0.3)
+                        ax4.axhline(y=0, color='black', linestyle='-', alpha=0.5)
+                        
+                        # Agregar valores en las barras
+                        for bar, rel_ret in zip(bars4, relative_returns):
+                            height = bar.get_height()
+                            y_pos = height + (height*0.05 if height >= 0 else height*0.05)
+                            ax4.text(bar.get_x() + bar.get_width()/2., y_pos,
+                                    f"{rel_ret:+.2f}%", ha='center', va='bottom' if height >= 0 else 'top', 
+                                    fontweight='bold')
+                    else:
+                        # Si no hay datos del S&P 500, mostrar correlación entre los dos tickers
+                        correlation_text = f"Correlación: {sel1} vs {sel2}"
+                        ax4.text(0.5, 0.5, correlation_text, ha='center', va='center', 
+                                transform=ax4.transAxes, fontsize=12, fontweight='bold')
+                        ax4.set_title('Análisis de Correlación')
+                else:
+                    missing = []
+                    if not ticker1_data:
+                        missing.append(sel1)
+                    if not ticker2_data:
+                        missing.append(sel2)
+                    
+                    for ax in [ax1, ax2, ax3, ax4]:
+                        ax.text(0.5, 0.5, f"No hay datos para: {', '.join(missing)}", 
+                               ha='center', va='center', transform=ax.transAxes)
+            else:
+                for ax in [ax1, ax2, ax3, ax4]:
+                    ax.text(0.5, 0.5, "Selecciona ambos tickers para comparar", 
+                           ha='center', va='center', transform=ax.transAxes)
+
         fig.tight_layout()
         canvas.draw()
         root.after(update_interval_ms, _update_ui)
@@ -9690,11 +10318,17 @@ def monitor_stocks_gui(update_interval_ms: int = 3000, top_n: int = 15):
     def _on_mode_change(event=None):
         _update_ui()
     def _on_ticker_change(event=None):
-        if mode_var.get() != "Ticker específico":
+        if mode_var.get() not in ["Ticker específico", "Ticker vs Ticker"]:
             mode_var.set("Ticker específico")
         _update_ui()
+    def _on_ticker2_change(event=None):
+        if mode_var.get() != "Ticker vs Ticker":
+            mode_var.set("Ticker vs Ticker")
+        _update_ui()
+    
     mode_combo.bind('<<ComboboxSelected>>', _on_mode_change)
     ticker_combo.bind('<<ComboboxSelected>>', _on_ticker_change)
+    ticker2_combo.bind('<<ComboboxSelected>>', _on_ticker2_change)
 
     # Primer disparo
     root.after(100, _update_ui)
@@ -9707,6 +10341,201 @@ def monitor_stocks_gui(update_interval_ms: int = 3000, top_n: int = 15):
             pass
 
 
+def estrategia_reversion_pares_tacticos(
+    pairs=None, 
+    dip_threshold_pct=-2.5, 
+    trend_period_days=7, 
+    min_score_to_buy=8, 
+    min_rr_ratio=1.8,
+    use_atr_for_risk=True
+):
+    """
+    Análisis Técnico Avanzado: Estrategia "Cazador de Contragolpes" (v5.0 - Edición de Torneo).
+    
+    Optimizado para un concurso de 3 semanas, este algoritmo se enfoca en señales de reversión de alta probabilidad
+    con una gestión de riesgo dinámica y una ejecución rápida.
+
+    Lógica Mejorada:
+    1.  INDICADORES MÁS RÁPIDOS: Usa Medias Móviles Exponenciales (EMAs) y el Oscilador Estocástico para mayor sensibilidad.
+    2.  MEDICIÓN DE VOLATILIDAD: Incorpora Bandas de Bollinger para identificar extensiones de precio extremas.
+    3.  PUNTUACIÓN GRANULAR: El sistema de puntuación es más detallado para capturar matices en la debilidad de la señal.
+    4.  GESTIÓN DE RIESGO DINÁMICA: Utiliza el Average True Range (ATR) para establecer niveles de Stop-Loss y Take-Profit
+        que se adaptan a la volatilidad reciente de cada activo.
+    5.  FILTRO DE RIESGO/RECOMPENSA (R/R) MÁS ESTRICTO: Aumenta el R/R mínimo para asegurar que solo se tomen las mejores operaciones.
+
+    Args:
+        pairs (list, optional): Lista de tuplas de pares a analizar.
+        dip_threshold_pct (float, optional): Umbral de caída para empezar a puntuar. Más negativo para buscar caídas más fuertes.
+        trend_period_days (int, optional): Días para evaluar la tendencia previa. Acortado para ser más relevante.
+        min_score_to_buy (int, optional): Puntuación mínima para una señal de "COMPRA FUERTE".
+        min_rr_ratio (float, optional): Relación mínima de Riesgo/Recompensa.
+        use_atr_for_risk (bool, optional): Si es True, usa ATR para Stop-Loss y Take-Profit.
+    """
+    console.print("[bold blue]🚀 Cazador de Contragolpes Táctico (v5.0 - Edición de Torneo)[/bold blue]")
+    
+    if pairs is None:
+        pairs = [
+            ('TQQQ', 'SQQQ'), ('SOXL', 'SOXS'), ('SPXL', 'SPXS'), 
+            ('FAS', 'FAZ'), ('TECL', 'TECS'), ('TNA', 'TZA'),
+            ('UPRO', 'SPXU'), ('UDOW', 'SDOW') # Pares adicionales
+        ]
+    
+    console.print(f"[yellow]Pares a analizar:[/yellow] {', '.join([f'{p[0]}/{p[1]}' for p in pairs])}")
+    
+    oportunidades = []
+
+    for alcista_ticker, bajista_ticker in pairs:
+        try:
+            score_debilidad_alcista, razon_alcista = _analizar_debilidad_etf(alcista_ticker, trend_period_days, dip_threshold_pct)
+            score_debilidad_bajista, razon_bajista = _analizar_debilidad_etf(bajista_ticker, trend_period_days, dip_threshold_pct)
+
+            if score_debilidad_alcista >= min_score_to_buy and score_debilidad_alcista > score_debilidad_bajista:
+                oportunidad = _generar_oportunidad(bajista_ticker, f"Debilidad Extrema en {alcista_ticker}", score_debilidad_alcista, min_rr_ratio, use_atr_for_risk)
+                if oportunidad:
+                    oportunidades.append(oportunidad)
+            
+            elif score_debilidad_bajista >= min_score_to_buy and score_debilidad_bajista > score_debilidad_alcista:
+                oportunidad = _generar_oportunidad(alcista_ticker, f"Debilidad Extrema en {bajista_ticker}", score_debilidad_bajista, min_rr_ratio, use_atr_for_risk)
+                if oportunidad:
+                    oportunidades.append(oportunidad)
+
+        except Exception as e:
+            console.print(f"[red]Error procesando par {alcista_ticker}/{bajista_ticker}: {e}[/red]")
+            continue
+    
+    if not oportunidades:
+        console.print("[bold yellow]No se encontraron oportunidades de alta probabilidad que cumplan todos los criterios.[/bold yellow]")
+        return
+
+    df_oportunidades = pd.DataFrame(oportunidades).sort_values("Score", ascending=False)
+
+    table = Table(title="🎯 Oportunidades de Contragolpe con Alta Probabilidad (v5.0)")
+    for col in df_oportunidades.columns:
+        table.add_column(col, style="cyan" if col == "Ticker" else "white")
+        
+    for _, row in df_oportunidades.iterrows():
+        table.add_row(*[str(val) for val in row.values], style="bold green")
+        
+    console.print(table)
+    
+    os.makedirs('data', exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    csv_file_path = f'data/estrategia_contragolpes_{timestamp}.csv'
+    df_oportunidades.to_csv(csv_file_path, index=False)
+    console.print(f"\n[blue]💾 Resultados guardados en: {csv_file_path}[/blue]")
+
+def _analizar_debilidad_etf(ticker, trend_period_days, dip_threshold_pct):
+    """Calcula el 'score de debilidad' usando indicadores más rápidos y sensibles."""
+    df = yf.download(ticker, period="3mo", progress=False, auto_adjust=True)
+    if df.empty or len(df) < 51: return 0, []
+
+    score = 0
+    razon = []
+    
+    # Asegurar que los datos son Series 1D
+    close = df['Close']
+    high = df['High']
+    low = df['Low']
+     
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+    if isinstance(high, pd.DataFrame):
+        high = high.iloc[:, 0]
+    if isinstance(low, pd.DataFrame):
+        low = low.iloc[:, 0]
+     
+    # --- Indicadores más rápidos ---
+    from ta.trend import EMAIndicator
+    from ta.momentum import StochasticOscillator
+    
+    ema_8 = float(EMAIndicator(close, window=8).ema_indicator().iloc[-1])
+    ema_21 = float(EMAIndicator(close, window=21).ema_indicator().iloc[-1])
+    bb = BollingerBands(close, window=20, window_dev=2)
+    bb_high = float(bb.bollinger_hband().iloc[-1])
+    bb_low = float(bb.bollinger_lband().iloc[-1])
+    stoch = StochasticOscillator(high=high, low=low, close=close, window=14, smooth_window=3)
+    stoch_k = float(stoch.stoch().iloc[-1])
+    
+    precio_actual = float(close.iloc[-1])
+    variacion_diaria = float(close.pct_change().iloc[-1] * 100)
+    retorno_tendencia = float(((close.iloc[-2] - close.iloc[-trend_period_days-2]) / close.iloc[-trend_period_days-2]) * 100)
+
+    # --- Sistema de Puntuación (Máx 12 pts) ---
+    
+    # 1. Tendencia Previa Fuerte (Máx 3 pts)
+    if retorno_tendencia > 10.0 and float(close.iloc[-2]) > ema_21:
+        score += 3
+        razon.append(f"Pre-Tendencia (+{retorno_tendencia:.1f}%)")
+    
+    # 2. Movimiento de Reversión Agresivo (Máx 5 pts)
+    if variacion_diaria < dip_threshold_pct:
+        score += 3
+        razon.append(f"Dip Agresivo ({variacion_diaria:.1f}%)")
+    if precio_actual < ema_8: # Cruce de EMA corta confirma debilidad
+        score += 2
+        razon.append("Cruce EMA8")
+
+    # 3. Confirmación por Osciladores y Volatilidad (Máx 4 pts)
+    if stoch_k > 80: # Estocástico en zona de sobrecompra, listo para girar
+        score += 2
+        razon.append("Stoch > 80")
+    if precio_actual > bb_high: # El precio se extendió fuera de las bandas, propenso a revertir
+        score += 2
+        razon.append("Fuera de BBands")
+        
+    return score, razon
+
+def _generar_oportunidad(ticker_a_comprar, razon_principal, score, min_rr_ratio, use_atr):
+    """Genera la recomendación con gestión de riesgo dinámica basada en ATR."""
+    df = yf.download(ticker_a_comprar, period="3mo", progress=False, auto_adjust=True)
+    if df.empty: return None
+
+    # Asegurar que los datos son Series 1D
+    close = df['Close']
+    high = df['High']
+    low = df['Low']
+    
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+    if isinstance(high, pd.DataFrame):
+        high = high.iloc[:, 0]
+    if isinstance(low, pd.DataFrame):
+        low = low.iloc[:, 0]
+    
+    precio_actual = float(close.iloc[-1])
+    
+    # --- Gestión de Riesgo Dinámica con ATR ---
+    from ta.volatility import AverageTrueRange
+    from ta.trend import EMAIndicator
+    
+    atr = float(AverageTrueRange(high=high, low=low, close=close, window=14).average_true_range().iloc[-1])
+    
+    if use_atr:
+        stop_loss = precio_actual - (atr * 2.0)  # Stop-Loss a 2x ATR
+        take_profit = precio_actual + (atr * 3.5) # Take-Profit a 3.5x ATR
+    else: # Mantener lógica original como opción
+        stop_loss = float(low.iloc[-1] * 0.97)
+        take_profit = float(EMAIndicator(close, window=20).ema_indicator().iloc[-1])
+
+    riesgo = precio_actual - stop_loss
+    recompensa = take_profit - precio_actual
+    ratio_rr = recompensa / riesgo if riesgo > 0 else 0
+
+    if ratio_rr >= min_rr_ratio:
+        return {
+            'Ticker': ticker_a_comprar,
+            'Señal': "COMPRA FUERTE",
+            'Score': score,
+            'Confianza': f"{min(95, 70 + (score - min_score_to_buy) * 4)}%",
+            'Precio': f"${precio_actual:,.2f}",
+            'Razón': razon_principal,
+            'Stop-Loss (ATR)': f"${stop_loss:,.2f}",
+            'Take-Profit (ATR)': f"${take_profit:,.2f}",
+            'R/R Ratio': f"{ratio_rr:,.2f}"
+        }
+    return None
+
+
 def main():
     # Construcción del menú con secciones
     menu_items = [
@@ -9714,6 +10543,8 @@ def main():
         { 'type': 'item', 'text': 'Análisis técnico rápido: Algoritmo Pairs Trading con ETFs Apalancados', 'action': pairs_trading_etf_leveraged },
         { 'type': 'item', 'text': 'Análisis técnico rápido: Sugerir ETFs apalancados para compra-venta usando estrategia swing trading por indicadores técnicos', 'action': suggest_enhanced_etf_strategy_leveraged },
         { 'type': 'item', 'text': 'Análisis técnico rápido: Sugerir ETFs para compra-venta usando estrategia swing trading por indicadores técnicos', 'action': suggest_enhanced_etf_strategy },
+        { 'type': 'item', 'text': 'Análisis técnico rápido: Estrategia de Reversión de Pares Tácticos para ETFs Apalancados', 'action': estrategia_reversion_pares_tacticos },
+        { 'type': 'item', 'text': 'Análisis cuantitativo: Estrategia de Acumulación Intradía (Scaling In) - Entrada Escalonada', 'action': estrategia_acumulacion_intraday_menu },
 
         { 'type': 'header', 'text': 'Análisis fundamental' },
         { 'type': 'item', 'text': 'Análisis fundamental: Sugerir acciones para seguimiento usando análisis por sector', 'action': fundamental_analysis },
@@ -9741,8 +10572,7 @@ def main():
         { 'type': 'item', 'text': 'Análisis cuantitativo: Estrategia de Acumulación ROBUSTA con Múltiples Fuentes de Datos', 'action': lambda: estrategia_acumulacion_intraday_menu() },
         { 'type': 'item', 'text': 'Análisis cuantitativo: Caza de Soportes Intradía - Identificación de Niveles Clave', 'action': lambda: caza_soportes_intraday() },
         { 'type': 'item', 'text': 'Análisis cuantitativo: Reversión a la Media con Bandas de Bollinger - ETFs Apalancados', 'action': lambda: reversion_media_bollinger() },
-        { 'type': 'item', 'text': 'Análisis cuantitativo: COMPLETO - Todas las Estrategias Integradas', 'action': lambda: analisis_cuantitativo_completo() },
-
+    
         { 'type': 'header', 'text': 'Utilidades' },
         { 'type': 'item', 'text': 'Utilidades (Reto Actinver 2025)', 'action': utilidades_actinver_2024 },
         { 'type': 'exit', 'text': 'Salir' },
@@ -9818,16 +10648,52 @@ def main():
 
 # No olvides actualizar la llamada en tu menú principal
 def estrategia_acumulacion_intraday_menu():
-    ticker = Prompt.ask("Ticker", default="TECL")
-    # Calcular capital óptimo basado en un solo ticker
-    optimal_capital = calculate_optimal_capital([ticker])
-    capital_total_str = Prompt.ask("Capital total", default=str(optimal_capital))
-    capital_total = float(capital_total_str) if capital_total_str else optimal_capital
-    num_escalones_str = Prompt.ask("Número de escalones (2-4)", default="3")
-    num_escalones = int(num_escalones_str) if num_escalones_str else 3
+    """
+    Menú mejorado para Estrategia de Acumulación Intradía con soporte para múltiples tickers
+    """
+    console.print("[bold blue]📊 Estrategia de Acumulación Intradía (Scaling In) - Entrada Escalonada[/bold blue]")
     
-    # Llamar a la nueva función
-    estrategia_acumulacion_diaria_estimada(ticker, capital_total, num_escalones)
+    # Solicitar múltiples tickers
+    tickers_input = input("Ingresa los tickers separados por comas (ej: ACWI,SPY,VTI): ").strip()
+    if not tickers_input:
+        tickers = ["TECL"]  # Default
+        console.print("[yellow]Usando ticker por defecto: TECL[/yellow]")
+    else:
+        tickers = [ticker.strip().upper() for ticker in tickers_input.split(",")]
+    
+    # Filtrar tickers excluidos
+    tickers = filter_excluded_tickers(tickers)
+    
+    # Calcular capital óptimo basado en número de tickers
+    optimal_capital = calculate_optimal_capital(tickers)
+    capital_total_str = input(f"Capital total (default: {optimal_capital}): ").strip()
+    if not capital_total_str:
+        capital_total = optimal_capital
+    else:
+        capital_total = float(capital_total_str)
+    
+    num_escalones_str = input("Número de escalones (2-4) (default: 3): ").strip()
+    if not num_escalones_str:
+        num_escalones = 3
+    else:
+        num_escalones = int(num_escalones_str)
+    
+    # Preguntar si quiere precios manuales
+    usar_precios_manuales = input("¿Quieres ingresar precios manuales para cada acción? (y/n, default: n): ").strip().lower()
+    precios_manuales = {}
+    
+    if usar_precios_manuales == 'y':
+        console.print("[yellow]Ingresa los precios manuales (Enter para usar datos de Reto Actinver):[/yellow]")
+        for ticker in tickers:
+            precio_str = input(f"Precio para {ticker}: ").strip()
+            if precio_str:
+                try:
+                    precios_manuales[ticker] = float(precio_str)
+                except ValueError:
+                    console.print(f"[red]Precio inválido para {ticker}, usando datos automáticos[/red]")
+    
+    # Llamar a la función mejorada
+    estrategia_acumulacion_multiple_tickers(tickers, capital_total, num_escalones, precios_manuales)
 
 
 def estrategia_acumulacion_diaria_estimada(ticker: str, capital_total: float = 10000, num_escalones: int = 3, precio_actual_manual: float | None = None):
@@ -9930,17 +10796,6 @@ def estrategia_acumulacion_diaria_estimada(ticker: str, capital_total: float = 1
         return {}
 
 # No olvides actualizar la llamada en tu menú principal
-def estrategia_acumulacion_intraday_menu():
-    ticker = Prompt.ask("Ticker", default="TECL")
-    # Calcular capital óptimo basado en un solo ticker
-    optimal_capital = calculate_optimal_capital([ticker])
-    capital_total_str = Prompt.ask("Capital total", default=str(optimal_capital))
-    capital_total = float(capital_total_str) if capital_total_str else optimal_capital
-    num_escalones_str = Prompt.ask("Número de escalones (2-4)", default="3")
-    num_escalones = int(num_escalones_str) if num_escalones_str else 3
-    
-    # Llamar a la nueva función
-    estrategia_acumulacion_diaria_estimada(ticker, capital_total, num_escalones)
 
 
 def _get_daily_data_robust(ticker: str):
@@ -10104,6 +10959,9 @@ def caza_soportes_intraday(tickers: list = None):
     if tickers is None:
         tickers = ['SOXS', 'SPXS', 'SOXL', 'SPXL', 'TQQQ', 'SQQQ']
     
+    # Filtrar tickers excluidos
+    tickers = filter_excluded_tickers(tickers)
+    
     console.print("[bold blue]🎯 Caza de Soportes Intradía[/bold blue]")
     console.print("[yellow]Identificando niveles de soporte clave para órdenes de compra[/yellow]")
     
@@ -10217,23 +11075,34 @@ def caza_soportes_intraday(tickers: list = None):
 
 
 
-def reversion_media_bollinger(tickers: list = None, periodo_bollinger: int = 20, desviacion: float = 2.0):
+def reversion_media_bollinger(tickers: list = None, periodo_bollinger: int = 15, desviacion: float = 1.8):
     """
-    Estrategia de Trading de Reversión a la Media usando Bandas de Bollinger
+    Estrategia de Trading de Reversión a la Media OPTIMIZADA PARA CONCURSO
     
-    Algoritmo mejorado que usa Bandas de Bollinger para identificar condiciones
-    de sobreventa/sobrecompra en ETFs apalancados.
+    Algoritmo mejorado con sistema de puntuación para generar más señales
+    de alta calidad en un período de 3 semanas.
+    
+    Mejoras implementadas:
+    - Parámetros más sensibles (período 15, desviación 1.8)
+    - Sistema de puntuación en lugar de lógica rígida
+    - Filtros de volumen y momentum
+    - Umbrales de RSI más agresivos
+    - Take profit dinámico con trailing stop
     
     Args:
         tickers: Lista de tickers a analizar
-        periodo_bollinger: Período para las Bandas de Bollinger (default: 20)
-        desviacion: Desviación estándar para las bandas (default: 2.0)
+        periodo_bollinger: Período para las Bandas de Bollinger (default: 15)
+        desviacion: Desviación estándar para las bandas (default: 1.8)
     """
     if tickers is None:
-        tickers = ['SOXL', 'SOXS', 'SPXL', 'SPXS', 'TQQQ', 'SQQQ', 'TECL', 'TECS']
+        tickers = ['SOXL', 'SOXS', 'SPXL', 'SPXS', 'TQQQ', 'SQQQ', 'TECL', 'TECS', 'FAS', 'FAZ', 'TNA', 'TZA']
     
-    console.print("[bold blue]📈 Estrategia de Reversión a la Media - Bandas de Bollinger[/bold blue]")
+    # Filtrar tickers excluidos
+    tickers = filter_excluded_tickers(tickers)
+    
+    console.print("[bold blue]🚀 Estrategia de Reversión a la Media - OPTIMIZADA PARA CONCURSO[/bold blue]")
     console.print(f"[yellow]Período: {periodo_bollinger} días, Desviación: {desviacion}σ[/yellow]")
+    console.print("[cyan]Sistema de puntuación: Más señales, mayor calidad[/cyan]")
     
     resultados = []
     señales_compra = []
@@ -10245,21 +11114,42 @@ def reversion_media_bollinger(tickers: list = None, periodo_bollinger: int = 20,
             mx_ticker = normalize_ticker_to_mx(ticker)
             df = yf.download(mx_ticker, period="3mo", progress=False)
             
-            if df.empty or len(df) < periodo_bollinger + 5:
+            if df.empty or len(df) < periodo_bollinger + 10:
                 console.print(f"[yellow]⚠️ Datos insuficientes para {ticker}[/yellow]")
                 continue
             
-            # Calcular Bandas de Bollinger
+            # Asegurar que sean Series 1D
             close = df['Close']
-            bollinger = BollingerBands(close, window=periodo_bollinger, window_dev=desviacion)
+            high = df['High']
+            low = df['Low']
+            volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1] * len(close))
             
-            # Obtener las bandas
+            if isinstance(close, pd.DataFrame):
+                close = close.iloc[:, 0]
+            if isinstance(high, pd.DataFrame):
+                high = high.iloc[:, 0]
+            if isinstance(low, pd.DataFrame):
+                low = low.iloc[:, 0]
+            if isinstance(volume, pd.DataFrame):
+                volume = volume.iloc[:, 0]
+            
+            # Calcular Bandas de Bollinger con parámetros optimizados
+            bollinger = BollingerBands(close, window=periodo_bollinger, window_dev=desviacion)
             bb_upper = bollinger.bollinger_hband()
-            bb_middle = bollinger.bollinger_mavg()  # Media móvil (banda media)
+            bb_middle = bollinger.bollinger_mavg()
             bb_lower = bollinger.bollinger_lband()
             
-            # Calcular indicadores adicionales
-            rsi = RSIIndicator(close, window=14).rsi()
+            # Calcular indicadores técnicos
+            rsi = RSIIndicator(close, window=10).rsi()  # RSI más sensible
+            
+            # Calcular Stochastic Oscillator
+            from ta.momentum import StochasticOscillator
+            stoch = StochasticOscillator(high=high, low=low, close=close, window=14, smooth_window=3)
+            stoch_k = stoch.stoch()
+            stoch_d = stoch.stoch_signal()
+            
+            # Calcular media móvil de 50 días para tendencia
+            sma_50 = close.rolling(window=50).mean()
             
             # Datos actuales
             precio_actual = float(close.iloc[-1])
@@ -10267,70 +11157,198 @@ def reversion_media_bollinger(tickers: list = None, periodo_bollinger: int = 20,
             bb_middle_actual = float(bb_middle.iloc[-1])
             bb_lower_actual = float(bb_lower.iloc[-1])
             rsi_actual = float(rsi.iloc[-1])
+            stoch_k_actual = float(stoch_k.iloc[-1])
+            stoch_d_actual = float(stoch_d.iloc[-1])
+            sma_50_actual = float(sma_50.iloc[-1])
+            volumen_actual = float(volume.iloc[-1])
+            
+            # Calcular volumen promedio de los últimos 20 días
+            volumen_promedio = float(volume.tail(20).mean())
             
             # Calcular posición dentro de las bandas (0 = banda inferior, 1 = banda superior)
-            bb_position = (precio_actual - bb_lower_actual) / (bb_upper_actual - bb_lower_actual)
+            if bb_upper_actual - bb_lower_actual != 0:
+                bb_position = (precio_actual - bb_lower_actual) / (bb_upper_actual - bb_lower_actual)
+            else:
+                bb_position = 0.5  # Evitar división por cero
             
-            # Calcular volatilidad (ancho de las bandas)
-            bb_width = ((bb_upper_actual - bb_lower_actual) / bb_middle_actual) * 100
+            # Calcular variaciones
+            variacion_1d = ((precio_actual - float(close.iloc[-2])) / float(close.iloc[-2])) * 100
+            variacion_3d = ((precio_actual - float(close.iloc[-4])) / float(close.iloc[-4])) * 100 if len(close) >= 4 else 0
             
-            # Detectar toques de bandas en los últimos días
+            # Detectar toques de bandas recientes
             toque_banda_inferior = any(close.tail(3) <= bb_lower.tail(3))
             toque_banda_superior = any(close.tail(3) >= bb_upper.tail(3))
             
-            # Calcular variación reciente
-            variacion_1d = ((precio_actual - float(close.iloc[-2])) / float(close.iloc[-2])) * 100
-            variacion_5d = ((precio_actual - float(close.iloc[-6])) / float(close.iloc[-6])) * 100 if len(close) >= 6 else 0
+            # SISTEMA DE PUNTUACIÓN PARA COMPRA
+            score_compra = 0
+            razones_compra = []
             
-            # Lógica de señales mejorada
+            # Puntuación por posición en bandas
+            if bb_position < 0.05:  # Muy cerca de banda inferior
+                score_compra += 3
+                razones_compra.append("Toca banda inferior")
+            elif bb_position < 0.15:  # Cerca de banda inferior
+                score_compra += 2
+                razones_compra.append("Cerca banda inferior")
+            elif bb_position < 0.3:  # En tercio inferior
+                score_compra += 1
+                razones_compra.append("Tercio inferior")
+            
+            # Puntuación por RSI
+            if rsi_actual < 25:  # RSI muy bajo
+                score_compra += 3
+                razones_compra.append("RSI muy bajo")
+            elif rsi_actual < 35:  # RSI bajo
+                score_compra += 2
+                razones_compra.append("RSI bajo")
+            elif rsi_actual < 45:  # RSI moderadamente bajo
+                score_compra += 1
+                razones_compra.append("RSI moderado")
+            
+            # Puntuación por Stochastic
+            if stoch_k_actual < 15:  # Stochastic muy bajo
+                score_compra += 2
+                razones_compra.append("Stochastic muy bajo")
+            elif stoch_k_actual < 25:  # Stochastic bajo
+                score_compra += 1
+                razones_compra.append("Stochastic bajo")
+            
+            # Puntuación por volumen
+            if volumen_actual > (volumen_promedio * 1.5):  # Volumen alto
+                score_compra += 2
+                razones_compra.append("Volumen alto")
+            elif volumen_actual > (volumen_promedio * 1.2):  # Volumen moderado
+                score_compra += 1
+                razones_compra.append("Volumen moderado")
+            
+            # Puntuación por tendencia (comprar en caída)
+            if precio_actual < sma_50_actual:
+                score_compra += 1
+                razones_compra.append("Por debajo SMA50")
+            
+            # Puntuación por variación reciente
+            if variacion_1d < -3:  # Caída fuerte
+                score_compra += 2
+                razones_compra.append("Caída fuerte")
+            elif variacion_1d < -1:  # Caída moderada
+                score_compra += 1
+                razones_compra.append("Caída moderada")
+            
+            # SISTEMA DE PUNTUACIÓN PARA VENTA
+            score_venta = 0
+            razones_venta = []
+            
+            # Puntuación por posición en bandas
+            if bb_position > 0.95:  # Muy cerca de banda superior
+                score_venta += 3
+                razones_venta.append("Toca banda superior")
+            elif bb_position > 0.85:  # Cerca de banda superior
+                score_venta += 2
+                razones_venta.append("Cerca banda superior")
+            elif bb_position > 0.7:  # En tercio superior
+                score_venta += 1
+                razones_venta.append("Tercio superior")
+            
+            # Puntuación por RSI
+            if rsi_actual > 75:  # RSI muy alto
+                score_venta += 3
+                razones_venta.append("RSI muy alto")
+            elif rsi_actual > 65:  # RSI alto
+                score_venta += 2
+                razones_venta.append("RSI alto")
+            elif rsi_actual > 55:  # RSI moderadamente alto
+                score_venta += 1
+                razones_venta.append("RSI moderado")
+            
+            # Puntuación por Stochastic
+            if stoch_k_actual > 85:  # Stochastic muy alto
+                score_venta += 2
+                razones_venta.append("Stochastic muy alto")
+            elif stoch_k_actual > 75:  # Stochastic alto
+                score_venta += 1
+                razones_venta.append("Stochastic alto")
+            
+            # Puntuación por volumen
+            if volumen_actual > (volumen_promedio * 1.5):  # Volumen alto
+                score_venta += 2
+                razones_venta.append("Volumen alto")
+            elif volumen_actual > (volumen_promedio * 1.2):  # Volumen moderado
+                score_venta += 1
+                razones_venta.append("Volumen moderado")
+            
+            # Puntuación por tendencia (vender en subida)
+            if precio_actual > sma_50_actual:
+                score_venta += 1
+                razones_venta.append("Por encima SMA50")
+            
+            # Puntuación por variación reciente
+            if variacion_1d > 3:  # Subida fuerte
+                score_venta += 2
+                razones_venta.append("Subida fuerte")
+            elif variacion_1d > 1:  # Subida moderada
+                score_venta += 1
+                razones_venta.append("Subida moderada")
+            
+            # DETERMINAR SEÑAL BASADA EN PUNTUACIÓN
             señal = "MANTENER"
             confianza = 0
             razon = ""
             
-            # Señales de COMPRA (Reversión desde sobreventa)
-            if (precio_actual <= bb_lower_actual * 1.01 or toque_banda_inferior) and rsi_actual < 35:
-                señal = "COMPRAR"
-                confianza = 85
-                razon = "Precio en banda inferior + RSI sobreventa"
+            if score_compra >= 7:
+                señal = "COMPRA FUERTE"
+                confianza = 90
+                razon = f"Puntuación: {score_compra} - " + ", ".join(razones_compra)
                 señales_compra.append(ticker)
-            elif bb_position < 0.2 and rsi_actual < 40 and variacion_1d < -2:
+            elif score_compra >= 5:
                 señal = "COMPRAR"
                 confianza = 75
-                razon = "Posición baja en bandas + caída fuerte"
+                razon = f"Puntuación: {score_compra} - " + ", ".join(razones_compra)
                 señales_compra.append(ticker)
-            elif precio_actual < bb_middle_actual and rsi_actual < 30:
-                señal = "COMPRAR"
-                confianza = 70
-                razon = "Por debajo de media + RSI muy bajo"
-                señales_compra.append(ticker)
-            
-            # Señales de VENTA (Reversión desde sobrecompra)
-            elif (precio_actual >= bb_upper_actual * 0.99 or toque_banda_superior) and rsi_actual > 65:
-                señal = "VENDER"
-                confianza = 85
-                razon = "Precio en banda superior + RSI sobrecompra"
+            elif score_venta >= 7:
+                señal = "VENTA FUERTE"
+                confianza = 90
+                razon = f"Puntuación: {score_venta} - " + ", ".join(razones_venta)
                 señales_venta.append(ticker)
-            elif bb_position > 0.8 and rsi_actual > 60 and variacion_1d > 2:
+            elif score_venta >= 5:
                 señal = "VENDER"
                 confianza = 75
-                razon = "Posición alta en bandas + subida fuerte"
+                razon = f"Puntuación: {score_venta} - " + ", ".join(razones_venta)
                 señales_venta.append(ticker)
-            elif precio_actual > bb_middle_actual and rsi_actual > 70:
-                señal = "VENDER"
-                confianza = 70
-                razon = "Por encima de media + RSI muy alto"
-                señales_venta.append(ticker)
+            else:
+                razon = f"Compra: {score_compra}, Venta: {score_venta} - Insuficiente para señal"
             
-            # Calcular niveles de stop-loss y take-profit
-            if señal == "COMPRAR":
-                stop_loss = min(bb_lower_actual * 0.98, precio_actual * 0.95)
-                take_profit = bb_middle_actual
-            elif señal == "VENDER":
-                stop_loss = max(bb_upper_actual * 1.02, precio_actual * 1.05)
-                take_profit = bb_middle_actual
+            # Calcular niveles de stop-loss y take-profit dinámicos
+            if señal in ["COMPRAR", "COMPRA FUERTE"]:
+                # Stop loss más agresivo para concurso
+                stop_loss = min(bb_lower_actual * 0.97, precio_actual * 0.92)
+                # Take profit dinámico: banda media o superior si hay momentum
+                if stoch_k_actual < 20 and rsi_actual < 30:
+                    take_profit = bb_upper_actual * 0.95  # Objetivo más ambicioso
+                else:
+                    take_profit = bb_middle_actual
+            elif señal in ["VENDER", "VENTA FUERTE"]:
+                # Stop loss más agresivo para concurso
+                stop_loss = max(bb_upper_actual * 1.03, precio_actual * 1.08)
+                # Take profit dinámico: banda media o inferior si hay momentum
+                if stoch_k_actual > 80 and rsi_actual > 70:
+                    take_profit = bb_lower_actual * 1.05  # Objetivo más ambicioso
+                else:
+                    take_profit = bb_middle_actual
             else:
                 stop_loss = precio_actual * 0.95 if bb_position > 0.5 else precio_actual * 1.05
                 take_profit = bb_middle_actual
+            
+            # Calcular ratio riesgo/recompensa
+            if señal in ["COMPRAR", "COMPRA FUERTE"]:
+                riesgo = precio_actual - stop_loss
+                recompensa = take_profit - precio_actual
+                ratio_rr = recompensa / riesgo if riesgo > 0 else 0
+            elif señal in ["VENDER", "VENTA FUERTE"]:
+                riesgo = stop_loss - precio_actual
+                recompensa = precio_actual - take_profit
+                ratio_rr = recompensa / riesgo if riesgo > 0 else 0
+            else:
+                ratio_rr = 0
             
             resultado = {
                 'ticker': ticker,
@@ -10339,15 +11357,21 @@ def reversion_media_bollinger(tickers: list = None, periodo_bollinger: int = 20,
                 'bb_middle': bb_middle_actual,
                 'bb_lower': bb_lower_actual,
                 'bb_position': bb_position,
-                'bb_width': bb_width,
                 'rsi': rsi_actual,
+                'stoch_k': stoch_k_actual,
+                'stoch_d': stoch_d_actual,
+                'sma_50': sma_50_actual,
+                'volumen_ratio': volumen_actual / volumen_promedio if volumen_promedio > 0 else 1,
                 'variacion_1d': variacion_1d,
-                'variacion_5d': variacion_5d,
+                'variacion_3d': variacion_3d,
+                'score_compra': score_compra,
+                'score_venta': score_venta,
                 'señal': señal,
                 'confianza': confianza,
                 'razon': razon,
                 'stop_loss': stop_loss,
                 'take_profit': take_profit,
+                'ratio_rr': ratio_rr,
                 'toque_banda_inferior': toque_banda_inferior,
                 'toque_banda_superior': toque_banda_superior
             }
@@ -10358,50 +11382,94 @@ def reversion_media_bollinger(tickers: list = None, periodo_bollinger: int = 20,
             console.print(f"[red]❌ Error analizando {ticker}: {e}[/red]")
             continue
     
-    # Mostrar resultados en tabla
+    # Mostrar resultados en tabla optimizada
     if resultados:
-        table = Table(title="Análisis de Reversión a la Media - Bandas de Bollinger")
-        table.add_column("Ticker", style="cyan")
-        table.add_column("Precio", style="white")
-        table.add_column("Posición BB", style="yellow")
-        table.add_column("RSI", style="blue")
-        table.add_column("Señal", style="bold")
-        table.add_column("Confianza", style="green")
-        table.add_column("Stop Loss", style="red")
-        table.add_column("Take Profit", style="green")
+        # Ordenar por puntuación total (mayor puntuación primero)
+        resultados_ordenados = sorted(resultados, key=lambda x: max(x['score_compra'], x['score_venta']), reverse=True)
         
-        for r in resultados:
-            # Color de la señal
-            if r['señal'] == "COMPRAR":
+        table = Table(title="🚀 Análisis de Reversión a la Media - OPTIMIZADO PARA CONCURSO")
+        table.add_column("Ticker", style="cyan", no_wrap=True)
+        table.add_column("Precio", style="white")
+        table.add_column("Señal", style="bold", no_wrap=True)
+        table.add_column("Punt.Compra", style="green")
+        table.add_column("Punt.Venta", style="red")
+        table.add_column("RSI", style="blue")
+        table.add_column("Stoch", style="magenta")
+        table.add_column("Vol.Ratio", style="yellow")
+        table.add_column("Confianza", style="green")
+        table.add_column("R/R", style="cyan")
+        
+        for r in resultados_ordenados:
+            # Color de la señal mejorado
+            if r['señal'] == "COMPRA FUERTE":
+                señal_color = "[bold bright_green]COMPRA FUERTE[/bold bright_green]"
+            elif r['señal'] == "COMPRAR":
                 señal_color = "[bold green]COMPRAR[/bold green]"
+            elif r['señal'] == "VENTA FUERTE":
+                señal_color = "[bold bright_red]VENTA FUERTE[/bold bright_red]"
             elif r['señal'] == "VENDER":
                 señal_color = "[bold red]VENDER[/bold red]"
             else:
                 señal_color = "[yellow]MANTENER[/yellow]"
             
+            # Color de puntuación
+            max_score = max(r['score_compra'], r['score_venta'])
+            if max_score >= 7:
+                score_color = "[bold bright_green]"
+            elif max_score >= 5:
+                score_color = "[bold yellow]"
+            else:
+                score_color = "[dim]"
+            
             table.add_row(
                 r['ticker'],
                 f"${r['precio_actual']:.2f}",
-                f"{r['bb_position']:.2f}",
-                f"{r['rsi']:.1f}",
                 señal_color,
+                f"{score_color}{r['score_compra']}[/{score_color}]",
+                f"{score_color}{r['score_venta']}[/{score_color}]",
+                f"{r['rsi']:.1f}",
+                f"{r['stoch_k']:.1f}",
+                f"{r['volumen_ratio']:.1f}x",
                 f"{r['confianza']}%",
-                f"${r['stop_loss']:.2f}",
-                f"${r['take_profit']:.2f}"
+                f"{r['ratio_rr']:.1f}"
             )
         
         console.print(table)
         
-        # Resumen de señales
-        console.print(f"\n[bold green]🟢 Señales de COMPRA ({len(señales_compra)}):[/bold green]")
-        for ticker in señales_compra:
-            r = next(res for res in resultados if res['ticker'] == ticker)
-            console.print(f"  • {ticker}: {r['razon']} (Confianza: {r['confianza']}%)")
+        # Resumen de señales mejorado
+        console.print(f"\n[bold green]🟢 SEÑALES DE COMPRA ({len(señales_compra)}):[/bold green]")
+        if señales_compra:
+            for ticker in señales_compra:
+                r = next(res for res in resultados if res['ticker'] == ticker)
+                console.print(f"  • {ticker}: {r['señal']} - Puntuación: {r['score_compra']} - {r['razon']}")
+                console.print(f"    Precio: ${r['precio_actual']:.2f} | RSI: {r['rsi']:.1f} | Stoch: {r['stoch_k']:.1f} | R/R: {r['ratio_rr']:.1f}")
+        else:
+            console.print("  [yellow]No hay señales de compra en este momento[/yellow]")
         
-        console.print(f"\n[bold red]🔴 Señales de VENTA ({len(señales_venta)}):[/bold red]")
-        for ticker in señales_venta:
-            r = next(res for res in resultados if res['ticker'] == ticker)
-            console.print(f"  • {ticker}: {r['razon']} (Confianza: {r['confianza']}%)")
+        console.print(f"\n[bold red]🔴 SEÑALES DE VENTA ({len(señales_venta)}):[/bold red]")
+        if señales_venta:
+            for ticker in señales_venta:
+                r = next(res for res in resultados if res['ticker'] == ticker)
+                console.print(f"  • {ticker}: {r['señal']} - Puntuación: {r['score_venta']} - {r['razon']}")
+                console.print(f"    Precio: ${r['precio_actual']:.2f} | RSI: {r['rsi']:.1f} | Stoch: {r['stoch_k']:.1f} | R/R: {r['ratio_rr']:.1f}")
+        else:
+            console.print("  [yellow]No hay señales de venta en este momento[/yellow]")
+        
+        # Resumen estadístico
+        total_señales = len(señales_compra) + len(señales_venta)
+        console.print(f"\n[bold cyan]📊 RESUMEN ESTADÍSTICO:[/bold cyan]")
+        console.print(f"  • Total de señales: {total_señales}")
+        console.print(f"  • Señales de compra: {len(señales_compra)}")
+        console.print(f"  • Señales de venta: {len(señales_venta)}")
+        console.print(f"  • Tickers analizados: {len(resultados)}")
+        
+        # Top 3 oportunidades
+        top_oportunidades = [r for r in resultados_ordenados if r['señal'] != 'MANTENER'][:3]
+        if top_oportunidades:
+            console.print(f"\n[bold yellow]🏆 TOP 3 OPORTUNIDADES:[/bold yellow]")
+            for i, r in enumerate(top_oportunidades, 1):
+                max_score = max(r['score_compra'], r['score_venta'])
+                console.print(f"  {i}. {r['ticker']}: {r['señal']} (Puntuación: {max_score}) - {r['razon']}")
         
         # Guardar resultados
         df_resultados = pd.DataFrame(resultados)
@@ -10426,6 +11494,9 @@ def analisis_cuantitativo_completo(tickers: list = None, capital_total: float = 
     """
     if tickers is None:
         tickers = ['SOXL', 'SOXS', 'SPXL', 'SPXS', 'TQQQ', 'SQQQ', 'TECL', 'TECS', 'FAS', 'FAZ']
+    
+    # Filtrar tickers excluidos
+    tickers = filter_excluded_tickers(tickers)
     
     # Calcular capital óptimo si no se especifica
     if capital_total is None:
@@ -10805,20 +11876,128 @@ def estrategia_acumulacion_diaria_estimada(ticker: str, capital_total: float = 1
     return estrategia
 
 
-def estrategia_acumulacion_intraday_menu():
-    """Menú interactivo para la estrategia de acumulación con datos robustos"""
-    ticker = input("Ticker (default='TECL'): ") or "TECL"
-    # Calcular capital óptimo basado en un solo ticker
-    optimal_capital = calculate_optimal_capital([ticker])
-    capital_total_str = input(f"Capital total (default='{optimal_capital}'): ") or str(optimal_capital)
-    capital_total = float(capital_total_str)
-    num_escalones_str = input("Número de escalones (2-4) (default='3'): ") or "3"
-    num_escalones = int(num_escalones_str)
-    precio_manual_str = input("Precio actual manual (opcional, Enter para omitir): ") or ""
-    precio_manual = float(precio_manual_str) if precio_manual_str.strip() else None
+
+
+def estrategia_acumulacion_multiple_tickers(tickers: list, capital_total: float, num_escalones: int, precios_manuales: dict = None):
+    """
+    Estrategia de Acumulación Intradía mejorada para múltiples tickers
+    Con soporte para precios manuales y límite de $400,000 por ticker
+    """
+    if precios_manuales is None:
+        precios_manuales = {}
     
-    # Llamar a la función
-    estrategia_acumulacion_diaria_estimada(ticker, capital_total, num_escalones, precio_manual)
+    console.print(f"[bold blue]📊 Estrategia de Acumulación Intradía para {len(tickers)} tickers[/bold blue]")
+    console.print(f"[yellow]Tickers: {', '.join(tickers)}[/yellow]")
+    console.print(f"[yellow]Capital total: ${capital_total:,.2f}[/yellow]")
+    console.print(f"[yellow]Escalones: {num_escalones}[/yellow]")
+    
+    # Obtener precios de Reto Actinver si no se proporcionaron manuales
+    precios_reto = get_prices_from_reto_actinver()
+    
+    # Calcular capital por ticker respetando el límite máximo
+    capital_por_ticker = min(capital_total / len(tickers), MAX_ALLOCATION_PER_TICKER)
+    
+    console.print(f"[cyan]Capital por ticker (limitado a ${MAX_ALLOCATION_PER_TICKER:,}): ${capital_por_ticker:,.2f}[/cyan]")
+    
+    # Almacenar resultados de todos los tickers
+    resultados_todos = []
+    
+    for i, ticker in enumerate(tickers, 1):
+        console.print(f"\n[bold magenta]📈 Analizando {ticker} ({i}/{len(tickers)})[/bold magenta]")
+        
+        # Obtener precio actual
+        if ticker in precios_manuales:
+            precio_actual = precios_manuales[ticker]
+            console.print(f"[green]✅ Usando precio manual: ${precio_actual:,.2f}[/green]")
+        elif ticker in precios_reto:
+            precio_actual = precios_reto[ticker]
+            console.print(f"[green]✅ Precio de Reto Actinver: ${precio_actual:,.2f}[/green]")
+        else:
+            console.print(f"[yellow]⚠️ No se encontró precio para {ticker}, usando datos históricos...[/yellow]")
+            # Usar función existente para obtener datos históricos
+            df = _get_daily_data_robust(ticker)
+            if df is not None and len(df) > 0:
+                precio_actual = float(df['Close'].iloc[-1])
+                console.print(f"[green]✅ Precio histórico: ${precio_actual:,.2f}[/green]")
+            else:
+                console.print(f"[red]❌ No se pudieron obtener datos para {ticker}[/red]")
+                continue
+        
+        # Calcular escalones usando la función existente
+        try:
+            resultado = estrategia_acumulacion_diaria_estimada(
+                ticker, capital_por_ticker, num_escalones, precio_actual
+            )
+            if resultado:
+                resultado['ticker'] = ticker
+                resultado['precio_actual'] = precio_actual
+                resultado['capital_asignado'] = capital_por_ticker
+                resultados_todos.append(resultado)
+        except Exception as e:
+            console.print(f"[red]❌ Error procesando {ticker}: {e}[/red]")
+            continue
+    
+    # Mostrar tabla consolidada de todos los tickers
+    if resultados_todos:
+        mostrar_tabla_consolidada(resultados_todos)
+    else:
+        console.print("[red]❌ No se pudieron procesar ningún ticker[/red]")
+
+
+def mostrar_tabla_consolidada(resultados: list):
+    """
+    Muestra una tabla consolidada con todos los escalones de todos los tickers
+    """
+    console.print(f"\n[bold green]📋 TABLA CONSOLIDADA - ESTRATEGIAS DE ACUMULACIÓN[/bold green]")
+    console.print("=" * 120)
+    
+    # Crear tabla con Rich
+    table = Table(title="🎯 Estrategias de Acumulación Intradía - Vista Consolidada")
+    table.add_column("Ticker", style="cyan", no_wrap=True)
+    table.add_column("Precio Actual", style="magenta")
+    table.add_column("Escalón", style="yellow")
+    table.add_column("Precio Entrada", style="green")
+    table.add_column("Monto", style="blue")
+    table.add_column("Acciones", style="white")
+    table.add_column("Condición", style="red")
+    table.add_column("Stop Loss", style="red")
+    
+    for resultado in resultados:
+        ticker = resultado['ticker']
+        precio_actual = resultado['precio_actual']
+        capital_asignado = resultado['capital_asignado']
+        
+        # Obtener escalones del resultado
+        escalones = resultado.get('escalones', [])
+        
+        for i, escalon in enumerate(escalones, 1):
+            table.add_row(
+                ticker if i == 1 else "",  # Solo mostrar ticker en el primer escalón
+                f"${precio_actual:,.2f}" if i == 1 else "",  # Solo mostrar precio en el primer escalón
+                str(i),
+                f"${escalon['precio_entrada']:,.2f}",
+                f"${escalon['monto']:,.2f}",
+                f"{escalon['acciones']:,}",
+                escalon['condicion'],
+                f"${escalon['stop_loss']:,.2f}"
+            )
+    
+    console.print(table)
+    
+    # Mostrar resumen por ticker
+    console.print(f"\n[bold cyan]📊 RESUMEN POR TICKER[/bold cyan]")
+    for resultado in resultados:
+        ticker = resultado['ticker']
+        escalones = resultado.get('escalones', [])
+        monto_total = sum(e['monto'] for e in escalones)
+        precio_promedio = resultado.get('precio_promedio', 0)
+        
+        console.print(f"[bold]{ticker}:[/bold] ${monto_total:,.2f} | Precio Promedio: ${precio_promedio:,.2f} | Escalones: {len(escalones)}")
+    
+    # Mostrar totales
+    monto_total_general = sum(sum(e['monto'] for e in r.get('escalones', [])) for r in resultados)
+    console.print(f"\n[bold green]💰 TOTAL GENERAL: ${monto_total_general:,.2f}[/bold green]")
+    console.print(f"[bold yellow]📈 TICKERS PROCESADOS: {len(resultados)}[/bold yellow]")
 
 
 if __name__ == "__main__":
@@ -10845,6 +12024,9 @@ def monitor_señales_tiempo_real(tickers: list = None, intervalo_minutos: int = 
     """
     if tickers is None:
         tickers = ['SOXL', 'SOXS', 'SPXL', 'SPXS', 'TQQQ', 'SQQQ', 'TECL', 'TECS']
+    
+    # Filtrar tickers excluidos
+    tickers = filter_excluded_tickers(tickers)
     
     console.print(f"[bold blue]🔄 Monitor de Señales en Tiempo Real[/bold blue]")
     console.print(f"[yellow]Monitoreando {len(tickers)} tickers cada {intervalo_minutos} minutos[/yellow]")
